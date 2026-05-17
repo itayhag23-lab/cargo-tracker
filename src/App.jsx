@@ -133,7 +133,7 @@ const T = {
   },
 };
 
-const ACCESS_PIN = "";
+const ACCESS_PIN = "1234";
 
 const DEFAULT_ITEMS = [
   { id: "d1", category: "ציוד קרגו",  name: "Uline Industrial Tape CLEAR",  unitsPerPack: 36,   orderQty: 0, costPerUnit: 1.99,  modelNumber: "S-423",      received: false, link: "https://www.uline.com/Product/Detail/S-423", notes: "" },
@@ -148,41 +148,57 @@ const ITEMS_DOC = doc(db, "cargo", "items");
 const SETTINGS_DOC = doc(db, "cargo", "settings");
 
 // ── EXCEL IMPORT ──────────────────────────────────────────────────────────────
-function findCol(headers, candidates) {
-  for (const h of headers) {
-    const hn = h.toLowerCase().trim();
-    for (const c of candidates) {
-      if (hn.includes(c.toLowerCase())) return h;
-    }
-  }
-  return null;
-}
+// Handles Hebrew Excel: Row 1 = category, Row 2 = supplier, Row 3 = headers
+// Supports multiple sheets automatically
+function parseSheet(ws, sheetName) {
+  const rawRows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
+  if (!rawRows.length) return [];
 
-function parseExcelRows(rows) {
-  if (!rows.length) return [];
-  const headers = Object.keys(rows[0]);
-  const nameKey   = findCol(headers, ["מוצר", "product", "item name", "name", "item"]);
-  const packKey   = findCol(headers, ["יחידות במארז", "units per pack", "per pack", "pack"]);
-  const qtyKey    = findCol(headers, ["כמות להזמנה", "order qty", "order quantity", "quantity", "qty"]);
-  const costKey   = findCol(headers, ["עלות ליחידה", "cost per unit", "unit cost", "unit price", "price"]);
-  const modelKey  = findCol(headers, ["model number", "model", "מודל", "מק\"ט", "sku", "part"]);
-  const rcvdKey   = findCol(headers, ["קיבלנו", "received", "התקבל"]);
-  const linkKey   = findCol(headers, ["link", "קישור", "url", "website"]);
-  const notesKey  = findCol(headers, ["הערות", "notes", "note", "remarks"]);
-  if (!nameKey) return [];
-  const cleanNum  = (v) => parseFloat(String(v).replace(/[$,\s]/g, "")) || 0;
-  const cleanBool = (v) => { const s = String(v).toLowerCase().trim(); return s==="yes"||s==="כן"||s==="true"||s==="1"||s==="v"||s==="✓"; };
-  return rows.map(r => ({
-    id: uid(), category: "ציוד קרגו",
-    name:         nameKey  ? String(r[nameKey]).trim()  : "",
-    unitsPerPack: packKey  ? cleanNum(r[packKey])       : 1,
-    orderQty:     qtyKey   ? cleanNum(r[qtyKey])        : 0,
-    costPerUnit:  costKey  ? cleanNum(r[costKey])       : 0,
-    modelNumber:  modelKey ? String(r[modelKey]).trim() : "",
-    received:     rcvdKey  ? cleanBool(r[rcvdKey])      : false,
-    link:         linkKey  ? String(r[linkKey]).trim()  : "",
-    notes:        notesKey ? String(r[notesKey]).trim() : "",
-  })).filter(r => r.name.length > 0);
+  let headerRowIdx = -1;
+  let category = sheetName || "ציוד קרגו";
+
+  for (let i = 0; i < rawRows.length; i++) {
+    const row = rawRows[i];
+    if (row.some(cell => String(cell).trim() === "מוצר")) {
+      headerRowIdx = i;
+      break;
+    }
+    if (i === 0 && row[0]) category = String(row[0]).trim();
+  }
+
+  if (headerRowIdx === -1) return [];
+
+  const headers = rawRows[headerRowIdx].map(h => String(h).trim());
+  const dataRows = rawRows.slice(headerRowIdx + 1);
+
+  const idx = (name) => headers.findIndex(h => h === name);
+  const nameIdx  = idx("מוצר");
+  const packIdx  = idx("יחידות במארז");
+  const qtyIdx   = idx("כמות להזמנה");
+  const costIdx  = idx("עלות ליחידה");
+  const modelIdx = idx("MODEL Number");
+  const rcvdIdx  = idx("קיבלנו את ההזמנה");
+  const linkIdx  = idx("Link");
+
+  if (nameIdx === -1) return [];
+
+  const cleanNum  = (v) => parseFloat(String(v).replace(/[$,\s=]/g, "")) || 0;
+  const cleanBool = (v) => v === true || String(v).toLowerCase() === "כן" || String(v).toLowerCase() === "yes";
+
+  return dataRows
+    .map(row => ({
+      id:           uid(),
+      category,
+      name:         String(row[nameIdx] || "").trim(),
+      unitsPerPack: packIdx  >= 0 ? cleanNum(row[packIdx])             : 1,
+      orderQty:     qtyIdx   >= 0 ? cleanNum(row[qtyIdx])              : 0,
+      costPerUnit:  costIdx  >= 0 ? cleanNum(row[costIdx])             : 0,
+      modelNumber:  modelIdx >= 0 ? String(row[modelIdx] || "").trim() : "",
+      received:     rcvdIdx  >= 0 ? cleanBool(row[rcvdIdx])            : false,
+      link:         linkIdx  >= 0 ? String(row[linkIdx] || "").trim()  : "",
+      notes: "",
+    }))
+    .filter(r => r.name.length > 0 && r.name !== "undefined");
 }
 
 // ── STYLES ────────────────────────────────────────────────────────────────────
@@ -556,11 +572,18 @@ export default function App() {
     reader.onload = (ev) => {
       try {
         const wb = XLSX.read(ev.target.result, { type:"binary" });
-        const ws = wb.Sheets[wb.SheetNames[0]];
-        const rows = XLSX.utils.sheet_to_json(ws, { defval:"" });
-        const parsed = parseExcelRows(rows);
-        if (parsed.length > 0) { setAndSave(parsed); alert("Imported " + parsed.length + " items!"); }
-        else alert("No items found. Make sure the Excel has a column named 'מוצר' or 'Item Name'.");
+        let allItems = [];
+        for (const sheetName of wb.SheetNames) {
+          const ws = wb.Sheets[sheetName];
+          const sheetItems = parseSheet(ws, sheetName);
+          allItems = [...allItems, ...sheetItems];
+        }
+        if (allItems.length > 0) {
+          setAndSave(allItems);
+          alert("Imported " + allItems.length + " items from " + wb.SheetNames.length + " sheets!");
+        } else {
+          alert("No items found. Make sure Excel has a column named מוצר");
+        }
       } catch (err) { alert("Error: " + err.message); }
       e.target.value = "";
     };
