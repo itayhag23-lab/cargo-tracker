@@ -81,7 +81,7 @@ function parseWorkbook(wb) {
     const nameIdx  = idx("\u05DE\u05D5\u05E6\u05E8");
     const packIdx  = idx("\u05D9\u05D7\u05D9\u05D3\u05D5\u05EA \u05D1\u05DE\u05D0\u05E8\u05D6");
     const qtyIdx   = idx("\u05DB\u05DE\u05D5\u05EA \u05DC\u05D4\u05D6\u05DE\u05E0\u05D4");
-    const costIdx  = idx("\u05E2\u05DC\u05D5\u05EA \u05DC\u05D9\u05D7\u05D9\u05D4");
+    const costIdx  = idx("\u05E2\u05DC\u05D5\u05EA \u05DC\u05D9\u05D7\u05D9\u05D3\u05D4");
     const modelIdx = idx("MODEL Number");
     const rcvdIdx  = idx("\u05E7\u05D9\u05D1\u05DC\u05E0\u05D5 \u05D0\u05EA \u05D4\u05D4\u05D6\u05DE\u05E0\u05D4");
     const linkIdx  = idx("Link");
@@ -110,7 +110,7 @@ function parseWorkbook(wb) {
         amazonName:   aNameIdx >= 0 ? String(row[aNameIdx] || "").trim() : "",
         notes:        "",
       }))
-      .filter(r => r.name.length > 0 && r.costPerUnit > 0);
+      .filter(r => r.name.length > 0 && !r.name.startsWith("\u05DE\u05D3\u05D1\u05E7\u05D5\u05EA"));
 
     if (!items.length) continue;
 
