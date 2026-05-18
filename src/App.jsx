@@ -689,7 +689,7 @@ export default function App() {
           </button>
           <button style={{ ...S.ghost, borderColor:`${C.primary}40`, color:C.primary }}
             onClick={()=>setShowAdd(true)}
-            onMouseEnter={e=>{e.currentTarget.style.background:`${C.primary}08`;}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
+            onMouseEnter={e=>{e.currentTarget.style.background=`${C.primary}08`;}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
             + Add Item
           </button>
           <button disabled={orderItems.length===0} onClick={()=>setShowEmail(true)}
