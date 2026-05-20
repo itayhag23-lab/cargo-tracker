@@ -171,14 +171,20 @@ function parseSheet(ws, sheetName) {
   const headers = rawRows[headerRowIdx].map(h => String(h).trim());
   const dataRows = rawRows.slice(headerRowIdx + 1);
 
-  const idx = (name) => headers.findIndex(h => h === name);
-  const nameIdx  = idx("מוצר");
-  const packIdx  = idx("יחידות במארז");
-  const qtyIdx   = idx("כמות להזמנה");
-  const costIdx  = idx("עלות ליחידה");
-  const modelIdx = idx("MODEL Number");
-  const rcvdIdx  = idx("קיבלנו את ההזמנה");
-  const linkIdx  = idx("Link");
+  const findIdx = (aliases) => {
+    for (const alias of aliases) {
+      const i = headers.findIndex(h => h.toLowerCase().includes(alias.toLowerCase()));
+      if (i >= 0) return i;
+    }
+    return -1;
+  };
+  const nameIdx  = findIdx(["מוצר"]);
+  const packIdx  = findIdx(["יחידות במארז", "יחידות בפועל", "units per pack"]);
+  const qtyIdx   = findIdx(["כמות להזמנה", "order qty", "order quantity"]);
+  const costIdx  = findIdx(["עלות ליחידה", "cost per unit", "unit cost"]);
+  const modelIdx = findIdx(["model number", "מודל", "מק\"ט"]);
+  const rcvdIdx  = findIdx(["קיבלנו", "received", "התקבל"]);
+  const linkIdx  = findIdx(["link", "קישור", "url"]);
 
   if (nameIdx === -1) return [];
 
