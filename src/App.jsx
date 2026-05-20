@@ -595,7 +595,37 @@ export default function App() {
   const removeItem = id => patchSheetItems(activeSheet, sheets[activeSheet].items.filter(i=>i.id!==id));
   const patchItem  = (id, patch) => patchSheetItems(activeSheet, sheets[activeSheet].items.map(i=>i.id===id?{...i,...patch}:i));
 
-  // ── Excel import ───────────────────────────────────────────────────────────
+  // ── Reset order quantities for current tab ────────────────────────────────
+  const resetQty = () => {
+    if (!window.confirm("Reset all order quantities to 0 for this tab?")) return;
+    patchSheetItems(si, sheet.items.map(i => ({ ...i, orderQty: 0 })));
+  };
+
+  // ── Excel import (smart merge) ────────────────────────────────────────────
+  const mergeSheets = (current, incoming) => {
+    const result = current.map(s => ({ ...s, items: [...s.items] }));
+    let added = 0;
+    for (const imp of incoming) {
+      const idx = result.findIndex(s => s.name.toLowerCase() === imp.name.toLowerCase());
+      if (idx >= 0) {
+        const isAllDefaults = result[idx].items.every(i => /^d\d+$/.test(i.id));
+        if (isAllDefaults) {
+          result[idx] = { ...result[idx], items: imp.items };
+          added += imp.items.length;
+        } else {
+          const existing = new Set(result[idx].items.map(i => i.name.toLowerCase()));
+          const newItems = imp.items.filter(i => !existing.has(i.name.toLowerCase()));
+          result[idx].items.push(...newItems);
+          added += newItems.length;
+        }
+      } else {
+        result.push(imp);
+        added += imp.items.length;
+      }
+    }
+    return { sheets: result, added };
+  };
+
   const handleExcel = e => {
     const file = e.target.files[0]; if (!file) return;
     const reader = new FileReader();
@@ -604,10 +634,12 @@ export default function App() {
         const wb = XLSX.read(new Uint8Array(ev.target.result), { type:"array" });
         const parsed = parseWorkbook(wb);
         if (parsed.length > 0) {
-          setAndSave(parsed);
+          const { sheets: merged, added } = mergeSheets(sheets, parsed);
+          setAndSave(merged);
           setActiveSheet(0);
-          const total = parsed.reduce((s,sh)=>s+sh.items.length,0);
-          alert("Imported " + total + " items across " + parsed.length + " tabs.");
+          alert(added > 0
+            ? "Added " + added + " new item(s)."
+            : "No new items \u2014 everything is already up to date.");
         } else {
           alert("No data found. Make sure sheets have a \u05DE\u05D5\u05E6\u05E8 column header.");
         }
@@ -748,13 +780,22 @@ export default function App() {
             </div>
           ))}
         </div>
-        {sheets.length > 1 && (
-          <button onClick={() => deleteSheet(si)}
-            style={{ ...S.ghost, color:C.danger, borderColor:`${C.danger}30`, fontSize:12 }}
-            onMouseEnter={e=>{e.currentTarget.style.background=`${C.danger}08`;}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
-            Delete Tab
-          </button>
-        )}
+        <div style={{ display:"flex", gap:8 }}>
+          {orderItems.length > 0 && (
+            <button onClick={resetQty}
+              style={{ ...S.ghost, color:C.warning, borderColor:`${C.warning}30`, fontSize:12 }}
+              onMouseEnter={e=>{e.currentTarget.style.background=`${C.warning}08`;}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
+              ↺ Reset Qty
+            </button>
+          )}
+          {sheets.length > 1 && (
+            <button onClick={() => deleteSheet(si)}
+              style={{ ...S.ghost, color:C.danger, borderColor:`${C.danger}30`, fontSize:12 }}
+              onMouseEnter={e=>{e.currentTarget.style.background=`${C.danger}08`;}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
+              Delete Tab
+            </button>
+          )}
+        </div>
       </div>
 
       {/* ── TABLE HEADER ── */}
