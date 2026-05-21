@@ -422,23 +422,10 @@ function SendFlow({ orderItems, sheetName, template, onClose }) {
       .replace("{{totalCost}}", total);
   };
 
-  const doSend = async () => {
-    setStep("sending");
-    try {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 500,
-          system: "You are a Gmail assistant. Send the exact email using the Gmail MCP send tool. Reply only with JSON: {\"sent\":true}",
-          messages: [{ role:"user", content: "Send this email:\nTo: " + preview.to + "\nSubject: " + preview.subject + "\nBody:\n" + preview.body }],
-          mcp_servers: [{ type:"url", url:"https://gmailmcp.googleapis.com/mcp/v1", name:"gmail-mcp" }],
-        }),
-      });
-      await res.json();
-      setStep("sent");
-    } catch { setStep("error"); }
+  const doSend = () => {
+    const uri = `mailto:${encodeURIComponent(preview.to)}?subject=${encodeURIComponent(preview.subject)}&body=${encodeURIComponent(preview.body)}`;
+    window.open(uri, "_self");
+    setStep("sent");
   };
 
   const lbl = { fontSize:10, color:C.subtle, textTransform:"uppercase", letterSpacing:"0.1em", marginBottom:4 };
@@ -498,31 +485,12 @@ function SendFlow({ orderItems, sheetName, template, onClose }) {
           </div>
         </>}
 
-        {step === "sending" && (
-          <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:16, padding:"28px 0" }}>
-            <style>{"@keyframes spin{to{transform:rotate(360deg)}}"}</style>
-            <div style={{ width:32, height:32, border:`3px solid ${C.border}`, borderTop:`3px solid ${C.primary}`, borderRadius:"50%", animation:"spin .8s linear infinite" }} />
-            <div style={{ color:C.muted, fontSize:13 }}>Sending...</div>
-          </div>
-        )}
-
         {step === "sent" && (
           <div style={{ textAlign:"center", padding:"16px 0" }}>
-            <div style={{ fontSize:40, marginBottom:12 }}>&#9989;</div>
-            <div style={{ fontSize:15, fontWeight:700, marginBottom:6, color:C.text }}>Email Sent!</div>
-            <div style={{ fontSize:12, color:C.muted, marginBottom:24 }}>Order sent to {preview && preview.to}</div>
+            <div style={{ fontSize:40, marginBottom:12 }}>&#9993;</div>
+            <div style={{ fontSize:15, fontWeight:700, marginBottom:6, color:C.text }}>Email Client Opened</div>
+            <div style={{ fontSize:12, color:C.muted, marginBottom:24 }}>Draft ready to {preview && preview.to} — hit Send in your mail app.</div>
             <button style={{ ...S.btn, margin:"0 auto" }} onClick={onClose}>Close</button>
-          </div>
-        )}
-
-        {step === "error" && (
-          <div style={{ textAlign:"center", padding:"16px 0" }}>
-            <div style={{ fontSize:40, marginBottom:12 }}>&#10060;</div>
-            <div style={{ fontSize:15, fontWeight:700, marginBottom:24, color:C.text }}>Send Failed</div>
-            <div style={{ display:"flex", gap:8, justifyContent:"center" }}>
-              <button style={{ ...S.cancel, flex:"none", padding:"9px 20px" }} onClick={() => setStep("preview")}>Back</button>
-              <button style={{ ...S.btn }} onClick={doSend}>Retry</button>
-            </div>
           </div>
         )}
       </div>
@@ -595,12 +563,6 @@ export default function App() {
   const removeItem = id => patchSheetItems(activeSheet, sheets[activeSheet].items.filter(i=>i.id!==id));
   const patchItem  = (id, patch) => patchSheetItems(activeSheet, sheets[activeSheet].items.map(i=>i.id===id?{...i,...patch}:i));
 
-  // ── Reset order quantities for current tab ────────────────────────────────
-  const resetQty = () => {
-    if (!window.confirm("Reset all order quantities to 0 for this tab?")) return;
-    patchSheetItems(si, sheet.items.map(i => ({ ...i, orderQty: 0 })));
-  };
-
   // ── Excel import (smart merge) ────────────────────────────────────────────
   const mergeSheets = (current, incoming) => {
     const result = current.map(s => ({ ...s, items: [...s.items] }));
@@ -656,6 +618,11 @@ export default function App() {
   const si     = Math.min(activeSheet, sheets.length - 1);
   const sheet  = sheets[si];
   if (!sheet)  return <Spinner />;
+
+  const resetQty = () => {
+    if (!window.confirm("Reset all order quantities to 0 for this tab?")) return;
+    patchSheetItems(si, sheet.items.map(i => ({ ...i, orderQty: 0 })));
+  };
 
   const isAmazon   = sheet.supplier === "AMAZON";
   const filtered   = sheet.items.filter(i =>
