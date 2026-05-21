@@ -409,11 +409,8 @@ function SendFlow({ orderItems, sheetName, template, onClose }) {
   const buildBody = () => {
     const date = new Date().toLocaleDateString("en-US", { weekday:"long", year:"numeric", month:"long", day:"numeric" });
     const lines = orderItems.map(i => {
-      let line = "\u2022 " + i.name;
-      if (i.modelNumber) line += " [" + i.modelNumber + "]";
-      if (i.amazonName)  line += " (" + i.amazonName + ")";
-      line += "\n  Qty: " + i.orderQty + " | Cost: $" + (i.orderQty * i.costPerUnit).toFixed(2);
-      if (i.link && i.link.startsWith("http")) line += "\n  Link: " + i.link;
+      let line = i.name + " - Qty: " + i.orderQty + " | Cost: $" + (i.orderQty * i.costPerUnit).toFixed(2);
+      if (i.link && i.link.startsWith("http")) line += "\n\nLink: " + i.link;
       return line;
     }).join("\n\n");
     return template
