@@ -1,11 +1,17 @@
 import { useState, useEffect, useRef } from "react";
 import * as XLSX from "xlsx";
-import { db } from "./firebase";
+import { db, auth } from "./firebase";
 import { doc, onSnapshot, setDoc, getDoc } from "firebase/firestore";
+import {
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signOut,
+} from "firebase/auth";
 
-// ─── FIREBASE DOCS ────────────────────────────────────────────────────────────
-const SHEETS_DOC   = doc(db, "cargo", "sheets");
-const SETTINGS_DOC = doc(db, "cargo", "settings");
+// ─── FIREBASE DOCS (per-user) ─────────────────────────────────────────────────
+const sheetsDoc   = uid => doc(db, "users", uid, "cargo", "sheets");
+const settingsDoc = uid => doc(db, "users", uid, "cargo", "settings");
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 const uid      = () => Math.random().toString(36).slice(2, 9);
@@ -27,8 +33,6 @@ const DEFAULT_TEMPLATE = [
   "Thank you"
 ].join("\n");
 
-// ─── ACCESS PIN ───────────────────────────────────────────────────────────────
-const ACCESS_PIN = "1234";
 
 // ─── DEFAULT DATA ─────────────────────────────────────────────────────────────
 const DEFAULT_SHEETS = [
@@ -245,32 +249,74 @@ function Badge({ label, color }) {
   );
 }
 
-// ─── PIN SCREEN ───────────────────────────────────────────────────────────────
-function PinScreen({ onUnlock }) {
-  const [pin, setPin] = useState("");
-  const [err, setErr] = useState(false);
+// ─── LOGIN SCREEN ─────────────────────────────────────────────────────────────
+function LoginScreen() {
+  const [mode,     setMode]     = useState("login"); // "login" | "register"
+  const [email,    setEmail]    = useState("");
+  const [password, setPassword] = useState("");
+  const [err,      setErr]      = useState("");
+  const [loading,  setLoading]  = useState(false);
 
-  const submit = () => {
-    if (pin === ACCESS_PIN) { onUnlock(); }
-    else { setErr(true); setPin(""); setTimeout(() => setErr(false), 2000); }
+  const submit = async () => {
+    setErr(""); setLoading(true);
+    try {
+      if (mode === "login") {
+        await signInWithEmailAndPassword(auth, email, password);
+      } else {
+        await createUserWithEmailAndPassword(auth, email, password);
+      }
+    } catch (e) {
+      const msg = {
+        "auth/user-not-found":    "No account with that email.",
+        "auth/wrong-password":    "Incorrect password.",
+        "auth/invalid-email":     "Invalid email address.",
+        "auth/email-already-in-use": "An account with this email already exists.",
+        "auth/weak-password":     "Password must be at least 6 characters.",
+        "auth/invalid-credential": "Incorrect email or password.",
+      }[e.code] || "Something went wrong. Try again.";
+      setErr(msg);
+    }
+    setLoading(false);
   };
+
+  const ff = e => { e.target.style.borderColor = C.primary; };
+  const fb = e => { e.target.style.borderColor = C.border; };
 
   return (
     <div style={{ minHeight:"100vh", background:C.bg, display:"flex", alignItems:"center", justifyContent:"center" }}>
-      <div style={{ background:C.surface, borderRadius:16, padding:"40px 48px", boxShadow:"0 4px 24px rgba(0,0,0,0.08)", border:`1px solid ${C.border}`, textAlign:"center", minWidth:320 }}>
+      <div style={{ background:C.surface, borderRadius:16, padding:"40px 48px", boxShadow:"0 4px 24px rgba(0,0,0,0.08)", border:`1px solid ${C.border}`, textAlign:"center", minWidth:340 }}>
         <div style={{ background:C.primary, width:48, height:48, borderRadius:12, display:"flex", alignItems:"center", justifyContent:"center", fontSize:22, margin:"0 auto 16px" }}>✈️</div>
         <div style={{ fontSize:20, fontWeight:700, color:C.text, marginBottom:4 }}>Cargo Supply CRM</div>
-        <div style={{ fontSize:13, color:C.muted, marginBottom:28 }}>Enter your PIN to continue</div>
-        <input
-          type="password" value={pin} autoFocus placeholder="••••"
-          onChange={e => setPin(e.target.value)}
-          onKeyDown={e => e.key==="Enter" && submit()}
-          style={{ ...S.input, textAlign:"center", letterSpacing:"0.3em", fontSize:20, padding:"12px 18px", marginBottom:err?8:12, border:`1px solid ${err ? C.danger : C.border}` }}
-        />
-        {err && <div style={{ color:C.danger, fontSize:12, marginBottom:8 }}>Incorrect PIN. Try again.</div>}
-        <button onClick={submit} style={{ ...S.btn, width:"100%", padding:"11px 0", fontSize:14, justifyContent:"center" }}>
-          Unlock
+        <div style={{ fontSize:13, color:C.muted, marginBottom:28 }}>
+          {mode === "login" ? "Sign in to your account" : "Create a new account"}
+        </div>
+
+        {[{ label:"Email", type:"email", val:email, set:setEmail }, { label:"Password", type:"password", val:password, set:setPassword }].map(f => (
+          <div key={f.label} style={{ marginBottom:14, textAlign:"left" }}>
+            <div style={{ fontSize:11, color:C.muted, marginBottom:5, fontWeight:600, textTransform:"uppercase", letterSpacing:"0.05em" }}>{f.label}</div>
+            <input type={f.type} value={f.val} autoFocus={f.label==="Email"} placeholder={f.label}
+              onChange={e => f.set(e.target.value)}
+              onKeyDown={e => e.key==="Enter" && submit()}
+              style={{ ...S.input, direction:"ltr" }}
+              onFocus={ff} onBlur={fb}
+            />
+          </div>
+        ))}
+
+        {err && <div style={{ color:C.danger, fontSize:12, marginBottom:12, textAlign:"left" }}>{err}</div>}
+
+        <button onClick={submit} disabled={loading || !email || !password}
+          style={{ ...S.btn, width:"100%", padding:"11px 0", fontSize:14, background:loading||!email||!password?C.border:"#2563EB", cursor:loading||!email||!password?"not-allowed":"pointer" }}>
+          {loading ? "Please wait…" : mode === "login" ? "Sign In" : "Create Account"}
         </button>
+
+        <div style={{ marginTop:18, fontSize:12, color:C.muted }}>
+          {mode === "login" ? "Don't have an account? " : "Already have an account? "}
+          <span onClick={() => { setMode(mode==="login"?"register":"login"); setErr(""); }}
+            style={{ color:C.primary, cursor:"pointer", fontWeight:600 }}>
+            {mode === "login" ? "Create one" : "Sign in"}
+          </span>
+        </div>
       </div>
     </div>
   );
@@ -497,7 +543,7 @@ function SendFlow({ orderItems, sheetName, template, onClose }) {
 
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────
 export default function App() {
-  const [unlocked,       setUnlocked]       = useState(false);
+  const [user,           setUser]           = useState(undefined); // undefined = loading
   const [sheets,         setSheets]         = useState(null);
   const [template,       setTemplate]       = useState(DEFAULT_TEMPLATE);
   const [activeSheet,    setActiveSheet]    = useState(0);
@@ -512,37 +558,34 @@ export default function App() {
   const fileRef   = useRef();
   const saveTimer = useRef(null);
 
-  // ── PIN ────────────────────────────────────────────────────────────────────
+  // ── Auth listener ──────────────────────────────────────────────────────────
   useEffect(() => {
-    try { if (sessionStorage.getItem("cargo-unlocked") === "1") setUnlocked(true); } catch {}
+    const unsub = onAuthStateChanged(auth, u => { setUser(u ?? null); if (!u) setSheets(null); });
+    return () => unsub();
   }, []);
 
-  const handleUnlock = () => {
-    try { sessionStorage.setItem("cargo-unlocked", "1"); } catch {}
-    setUnlocked(true);
-  };
-
-  // ── Firebase ───────────────────────────────────────────────────────────────
+  // ── Firestore listener (per user) ─────────────────────────────────────────
   useEffect(() => {
-    if (!unlocked) return;
-    const unsub = onSnapshot(SHEETS_DOC, snap => {
+    if (!user) return;
+    const unsub = onSnapshot(sheetsDoc(user.uid), snap => {
       if (snap.exists()) { setSheets(snap.data().sheets || DEFAULT_SHEETS); }
-      else { setDoc(SHEETS_DOC, { sheets: DEFAULT_SHEETS }); setSheets(DEFAULT_SHEETS); }
+      else { setDoc(sheetsDoc(user.uid), { sheets: DEFAULT_SHEETS }); setSheets(DEFAULT_SHEETS); }
     }, () => {
       setSheets(DEFAULT_SHEETS);
       setSyncStatus("error");
     });
-    getDoc(SETTINGS_DOC).then(snap => {
+    getDoc(settingsDoc(user.uid)).then(snap => {
       if (snap.exists()) setTemplate(snap.data().template || DEFAULT_TEMPLATE);
     }).catch(() => {});
     return () => unsub();
-  }, [unlocked]);
+  }, [user]);
 
   const saveSheets = newSheets => {
+    if (!user) return;
     setSyncStatus("syncing");
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(async () => {
-      await setDoc(SHEETS_DOC, { sheets: newSheets });
+      await setDoc(sheetsDoc(user.uid), { sheets: newSheets });
       setSyncStatus("ok");
     }, 800);
   };
@@ -612,8 +655,9 @@ export default function App() {
   };
 
   // ── Guards ─────────────────────────────────────────────────────────────────
-  if (!unlocked) return <PinScreen onUnlock={handleUnlock} />;
-  if (!sheets)   return <Spinner />;
+  if (user === undefined) return <Spinner />;
+  if (!user)              return <LoginScreen />;
+  if (!sheets)            return <Spinner />;
 
   const si     = Math.min(activeSheet, sheets.length - 1);
   const sheet  = sheets[si];
@@ -694,6 +738,11 @@ export default function App() {
           <button disabled={orderItems.length===0} onClick={()=>setShowEmail(true)}
             style={{ ...S.btn, background:orderItems.length?C.primary:C.border, color:orderItems.length?"#fff":C.subtle, cursor:orderItems.length?"pointer":"not-allowed" }}>
             &#9993; Order{orderItems.length > 0 ? " (" + orderItems.length + ")" : ""}
+          </button>
+          <button onClick={() => signOut(auth)} title={user.email}
+            style={{ ...S.ghost, fontSize:12, padding:"7px 12px" }}
+            onMouseEnter={e=>{e.currentTarget.style.background=C.bg;}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
+            Sign out
           </button>
         </div>
       </div>
@@ -872,7 +921,7 @@ export default function App() {
         <ItemModal item={editItem} isAmazon={isAmazon} onSave={upsertItem} onClose={() => setEditItem(null)} />
       )}
       {showTpl && (
-        <TemplateEditor template={template} onSave={tpl => { setTemplate(tpl); setDoc(SETTINGS_DOC, { template:tpl }); }} onClose={() => setShowTpl(false)} />
+        <TemplateEditor template={template} onSave={tpl => { setTemplate(tpl); setDoc(settingsDoc(user.uid), { template:tpl }); }} onClose={() => setShowTpl(false)} />
       )}
       {showEmail && (
         <SendFlow orderItems={orderItems} sheetName={sheet.name} template={template} onClose={() => setShowEmail(false)} />
