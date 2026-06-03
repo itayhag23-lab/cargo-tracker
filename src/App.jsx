@@ -6,6 +6,7 @@ import {
   onAuthStateChanged,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
+  sendPasswordResetEmail,
   signOut,
 } from "firebase/auth";
 
@@ -250,72 +251,107 @@ function Badge({ label, color }) {
 }
 
 // ─── LOGIN SCREEN ─────────────────────────────────────────────────────────────
+const AUTH_ERRORS = {
+  "auth/user-not-found":       "No account with that email.",
+  "auth/wrong-password":       "Incorrect passcode.",
+  "auth/invalid-email":        "Invalid email address.",
+  "auth/email-already-in-use": "An account with this email already exists.",
+  "auth/weak-password":        "Passcode must be at least 6 characters.",
+  "auth/invalid-credential":   "Incorrect passcode.",
+};
+
 function LoginScreen() {
-  const [mode,     setMode]     = useState("login"); // "login" | "register"
-  const [email,    setEmail]    = useState("");
-  const [password, setPassword] = useState("");
+  const savedEmail = localStorage.getItem("cargo-email") || "";
+  // "passcode" = returning user (email known), "full" = new device, "register", "forgot"
+  const [mode,     setMode]     = useState(savedEmail ? "passcode" : "full");
+  const [email,    setEmail]    = useState(savedEmail);
+  const [passcode, setPasscode] = useState("");
   const [err,      setErr]      = useState("");
   const [loading,  setLoading]  = useState(false);
+  const [resetSent,setResetSent]= useState(false);
 
   const submit = async () => {
     setErr(""); setLoading(true);
     try {
-      if (mode === "login") {
-        await signInWithEmailAndPassword(auth, email, password);
+      if (mode === "forgot") {
+        await sendPasswordResetEmail(auth, email);
+        setResetSent(true);
+      } else if (mode === "register") {
+        await createUserWithEmailAndPassword(auth, email, passcode);
+        localStorage.setItem("cargo-email", email);
       } else {
-        await createUserWithEmailAndPassword(auth, email, password);
+        await signInWithEmailAndPassword(auth, email, passcode);
+        localStorage.setItem("cargo-email", email);
       }
     } catch (e) {
-      const msg = {
-        "auth/user-not-found":    "No account with that email.",
-        "auth/wrong-password":    "Incorrect password.",
-        "auth/invalid-email":     "Invalid email address.",
-        "auth/email-already-in-use": "An account with this email already exists.",
-        "auth/weak-password":     "Password must be at least 6 characters.",
-        "auth/invalid-credential": "Incorrect email or password.",
-      }[e.code] || "Something went wrong. Try again.";
-      setErr(msg);
+      setErr(AUTH_ERRORS[e.code] || "Something went wrong. Try again.");
     }
     setLoading(false);
   };
 
   const ff = e => { e.target.style.borderColor = C.primary; };
   const fb = e => { e.target.style.borderColor = C.border; };
+  const link = (label, onClick) => (
+    <span onClick={onClick} style={{ color:C.primary, cursor:"pointer", fontWeight:600 }}>{label}</span>
+  );
+
+  const titles = { passcode:"Welcome back", full:"Sign in", register:"Create account", forgot:"Reset passcode" };
+  const canSubmit = !loading && (mode === "forgot" ? email : email && passcode);
 
   return (
     <div style={{ minHeight:"100vh", background:C.bg, display:"flex", alignItems:"center", justifyContent:"center" }}>
       <div style={{ background:C.surface, borderRadius:16, padding:"40px 48px", boxShadow:"0 4px 24px rgba(0,0,0,0.08)", border:`1px solid ${C.border}`, textAlign:"center", minWidth:340 }}>
         <div style={{ background:C.primary, width:48, height:48, borderRadius:12, display:"flex", alignItems:"center", justifyContent:"center", fontSize:22, margin:"0 auto 16px" }}>✈️</div>
         <div style={{ fontSize:20, fontWeight:700, color:C.text, marginBottom:4 }}>Cargo Supply CRM</div>
-        <div style={{ fontSize:13, color:C.muted, marginBottom:28 }}>
-          {mode === "login" ? "Sign in to your account" : "Create a new account"}
-        </div>
+        <div style={{ fontSize:13, color:C.muted, marginBottom:28 }}>{titles[mode]}</div>
 
-        {[{ label:"Email", type:"email", val:email, set:setEmail }, { label:"Password", type:"password", val:password, set:setPassword }].map(f => (
-          <div key={f.label} style={{ marginBottom:14, textAlign:"left" }}>
-            <div style={{ fontSize:11, color:C.muted, marginBottom:5, fontWeight:600, textTransform:"uppercase", letterSpacing:"0.05em" }}>{f.label}</div>
-            <input type={f.type} value={f.val} autoFocus={f.label==="Email"} placeholder={f.label}
-              onChange={e => f.set(e.target.value)}
+        {/* Email — shown for all modes except "passcode" */}
+        {mode !== "passcode" && (
+          <div style={{ marginBottom:14, textAlign:"left" }}>
+            <div style={{ fontSize:11, color:C.muted, marginBottom:5, fontWeight:600, textTransform:"uppercase", letterSpacing:"0.05em" }}>Email</div>
+            <input type="email" value={email} autoFocus placeholder="you@example.com"
+              onChange={e => setEmail(e.target.value)}
               onKeyDown={e => e.key==="Enter" && submit()}
-              style={{ ...S.input, direction:"ltr" }}
-              onFocus={ff} onBlur={fb}
-            />
+              style={{ ...S.input, direction:"ltr" }} onFocus={ff} onBlur={fb} />
           </div>
-        ))}
+        )}
 
-        {err && <div style={{ color:C.danger, fontSize:12, marginBottom:12, textAlign:"left" }}>{err}</div>}
+        {/* Passcode — shown for passcode / full / register */}
+        {mode !== "forgot" && (
+          <div style={{ marginBottom:14, textAlign:"left" }}>
+            {mode === "passcode" && (
+              <div style={{ fontSize:12, color:C.muted, marginBottom:8, textAlign:"center" }}>
+                {email} &nbsp;·&nbsp; {link("Not you?", () => { localStorage.removeItem("cargo-email"); setMode("full"); setEmail(""); setPasscode(""); setErr(""); })}
+              </div>
+            )}
+            <div style={{ fontSize:11, color:C.muted, marginBottom:5, fontWeight:600, textTransform:"uppercase", letterSpacing:"0.05em" }}>Passcode</div>
+            <input type="password" value={passcode} autoFocus={mode==="passcode"} placeholder="••••••"
+              onChange={e => setPasscode(e.target.value)}
+              onKeyDown={e => e.key==="Enter" && submit()}
+              style={{ ...S.input, direction:"ltr", textAlign:"center", letterSpacing:"0.2em" }} onFocus={ff} onBlur={fb} />
+          </div>
+        )}
 
-        <button onClick={submit} disabled={loading || !email || !password}
-          style={{ ...S.btn, width:"100%", padding:"11px 0", fontSize:14, background:loading||!email||!password?C.border:"#2563EB", cursor:loading||!email||!password?"not-allowed":"pointer" }}>
-          {loading ? "Please wait…" : mode === "login" ? "Sign In" : "Create Account"}
-        </button>
+        {resetSent
+          ? <div style={{ color:C.success, fontSize:13, marginBottom:16 }}>Reset link sent! Check your email.</div>
+          : err && <div style={{ color:C.danger, fontSize:12, marginBottom:12, textAlign:"left" }}>{err}</div>
+        }
 
-        <div style={{ marginTop:18, fontSize:12, color:C.muted }}>
-          {mode === "login" ? "Don't have an account? " : "Already have an account? "}
-          <span onClick={() => { setMode(mode==="login"?"register":"login"); setErr(""); }}
-            style={{ color:C.primary, cursor:"pointer", fontWeight:600 }}>
-            {mode === "login" ? "Create one" : "Sign in"}
-          </span>
+        {!resetSent && (
+          <button onClick={submit} disabled={!canSubmit}
+            style={{ ...S.btn, width:"100%", padding:"11px 0", fontSize:14, background:canSubmit?C.primary:C.border, cursor:canSubmit?"pointer":"not-allowed" }}>
+            {loading ? "Please wait…" : mode==="forgot" ? "Send Reset Link" : mode==="register" ? "Create Account" : "Enter"}
+          </button>
+        )}
+
+        <div style={{ marginTop:16, fontSize:12, color:C.muted, display:"flex", flexDirection:"column", gap:6, alignItems:"center" }}>
+          {(mode === "passcode" || mode === "full") && (
+            <div>Forgot passcode? {link("Reset via email", () => { setMode("forgot"); setErr(""); setPasscode(""); })}</div>
+          )}
+          {mode === "full" && <div>No account? {link("Create one", () => { setMode("register"); setErr(""); })}</div>}
+          {(mode === "register" || mode === "forgot" || resetSent) && (
+            <div>{link("← Back to sign in", () => { setMode(savedEmail?"passcode":"full"); setErr(""); setPasscode(""); setResetSent(false); })}</div>
+          )}
         </div>
       </div>
     </div>
