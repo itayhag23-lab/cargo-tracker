@@ -9,7 +9,6 @@ import {
   sendPasswordResetEmail,
   signInWithPopup,
   GoogleAuthProvider,
-  OAuthProvider,
   signOut,
 } from "firebase/auth";
 
@@ -273,18 +272,12 @@ const GoogleIcon = () => (
   </svg>
 );
 
-const AppleIcon = () => (
-  <svg width="18" height="18" viewBox="0 0 814 1000" style={{ flexShrink:0 }}>
-    <path fill="currentColor" d="M788.1 340.9c-5.8 4.5-108.2 62.2-108.2 190.5 0 148.4 130.3 200.9 134.2 202.2-.6 3.2-20.7 71.9-68.7 141.9-42.8 61.6-87.5 123.1-155.5 123.1s-85.5-39.5-164-39.5c-76.5 0-103.7 40.8-165.9 40.8s-105-43.4-150.3-109.7C57.5 697.5 1 521.5 1 357.8c0-124.7 65.5-190.1 85-207.5 38.2-34.3 92.9-55 142.6-55 46.3 0 92 16.5 124.5 40.8 29.8 22.7 54.5 55.4 79.5 55.4 22.5 0 48.2-28.4 76.7-48.3 33.7-23.4 68.6-39.1 108.7-39.1h5.6zm-219.7-153.2c20.9 26.2 35.6 64.7 35.6 104 0 8.7-1.9 17.5-3.8 24.5-48.2-5.6-104.5-33.8-137.4-71.7-22.7-26.2-41.7-67.5-41.7-107 0-7.5.6-15.6 1.9-22 37.5 5.5 83.7 30.8 145.4 72.2z"/>
-  </svg>
-);
 
 function LoginScreen() {
   const savedEmail    = localStorage.getItem("cargo-email")    || "";
   const savedProvider = localStorage.getItem("cargo-provider") || "";
 
   const initMode = savedProvider === "google" ? "google-return"
-                 : savedProvider === "apple"  ? "apple-return"
                  : savedEmail                 ? "passcode"
                  :                             "new";
 
@@ -302,15 +295,6 @@ function LoginScreen() {
     try {
       await signInWithPopup(auth, new GoogleAuthProvider());
       localStorage.setItem("cargo-provider", "google");
-      localStorage.removeItem("cargo-email");
-    } catch(e) { onErr(e); }
-  };
-
-  const doApple = async () => {
-    setErr(""); setLoading(true);
-    try {
-      await signInWithPopup(auth, new OAuthProvider("apple.com"));
-      localStorage.setItem("cargo-provider", "apple");
       localStorage.removeItem("cargo-email");
     } catch(e) { onErr(e); }
   };
@@ -390,18 +374,6 @@ function LoginScreen() {
           </div>
         </>}
 
-        {/* ── RETURNING: APPLE ──────────────────────────── */}
-        {mode === "apple-return" && <>
-          <div style={{ fontSize:13, color:C.muted, marginBottom:20 }}>Welcome back</div>
-          <SocialBtn onClick={doApple} bg="#000" color="#fff">
-            <AppleIcon /> Continue with Apple
-          </SocialBtn>
-          <Err />
-          <div style={{ fontSize:12, color:C.muted, marginTop:6 }}>
-            <Lnk onClick={forget}>Not you? Switch account</Lnk>
-          </div>
-        </>}
-
         {/* ── RETURNING: PASSCODE ───────────────────────── */}
         {mode === "passcode" && <>
           <div style={{ fontSize:13, color:C.muted, marginBottom:20 }}>
@@ -427,9 +399,6 @@ function LoginScreen() {
           <SocialBtn onClick={doGoogle} bg="#fff" color="#3c4043" border={C.border}>
             <GoogleIcon /> Continue with Google
           </SocialBtn>
-          <SocialBtn onClick={doApple} bg="#000" color="#fff">
-            <AppleIcon /> Continue with Apple
-          </SocialBtn>
           <Divider />
           <FieldInput label="Email" type="email" value={email} autoFocus onChange={e => setEmail(e.target.value)} />
           <FieldInput label="Passcode" type="password" value={passcode} onChange={e => setPasscode(e.target.value)} onEnter={() => doEmail(false)} />
@@ -449,9 +418,6 @@ function LoginScreen() {
           <div style={{ fontSize:13, color:C.muted, marginBottom:20 }}>Create a new account</div>
           <SocialBtn onClick={doGoogle} bg="#fff" color="#3c4043" border={C.border}>
             <GoogleIcon /> Sign up with Google
-          </SocialBtn>
-          <SocialBtn onClick={doApple} bg="#000" color="#fff">
-            <AppleIcon /> Sign up with Apple
           </SocialBtn>
           <Divider />
           <FieldInput label="Email" type="email" value={email} autoFocus onChange={e => setEmail(e.target.value)} />
