@@ -7,6 +7,9 @@ import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   sendPasswordResetEmail,
+  signInWithPopup,
+  GoogleAuthProvider,
+  OAuthProvider,
   signOut,
 } from "firebase/auth";
 
@@ -258,101 +261,230 @@ const AUTH_ERRORS = {
   "auth/email-already-in-use": "An account with this email already exists.",
   "auth/weak-password":        "Passcode must be at least 6 characters.",
   "auth/invalid-credential":   "Incorrect passcode.",
+  "auth/popup-closed-by-user": "Sign-in cancelled.",
 };
 
-function LoginScreen() {
-  const savedEmail = localStorage.getItem("cargo-email") || "";
-  // "passcode" = returning user (email known), "full" = new device, "register", "forgot"
-  const [mode,     setMode]     = useState(savedEmail ? "passcode" : "full");
-  const [email,    setEmail]    = useState(savedEmail);
-  const [passcode, setPasscode] = useState("");
-  const [err,      setErr]      = useState("");
-  const [loading,  setLoading]  = useState(false);
-  const [resetSent,setResetSent]= useState(false);
+const GoogleIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 48 48" style={{ flexShrink:0 }}>
+    <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+    <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+    <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+    <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.35-8.16 2.35-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+  </svg>
+);
 
-  const submit = async () => {
+const AppleIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 814 1000" style={{ flexShrink:0 }}>
+    <path fill="currentColor" d="M788.1 340.9c-5.8 4.5-108.2 62.2-108.2 190.5 0 148.4 130.3 200.9 134.2 202.2-.6 3.2-20.7 71.9-68.7 141.9-42.8 61.6-87.5 123.1-155.5 123.1s-85.5-39.5-164-39.5c-76.5 0-103.7 40.8-165.9 40.8s-105-43.4-150.3-109.7C57.5 697.5 1 521.5 1 357.8c0-124.7 65.5-190.1 85-207.5 38.2-34.3 92.9-55 142.6-55 46.3 0 92 16.5 124.5 40.8 29.8 22.7 54.5 55.4 79.5 55.4 22.5 0 48.2-28.4 76.7-48.3 33.7-23.4 68.6-39.1 108.7-39.1h5.6zm-219.7-153.2c20.9 26.2 35.6 64.7 35.6 104 0 8.7-1.9 17.5-3.8 24.5-48.2-5.6-104.5-33.8-137.4-71.7-22.7-26.2-41.7-67.5-41.7-107 0-7.5.6-15.6 1.9-22 37.5 5.5 83.7 30.8 145.4 72.2z"/>
+  </svg>
+);
+
+function LoginScreen() {
+  const savedEmail    = localStorage.getItem("cargo-email")    || "";
+  const savedProvider = localStorage.getItem("cargo-provider") || "";
+
+  const initMode = savedProvider === "google" ? "google-return"
+                 : savedProvider === "apple"  ? "apple-return"
+                 : savedEmail                 ? "passcode"
+                 :                             "new";
+
+  const [mode,      setMode]      = useState(initMode);
+  const [email,     setEmail]     = useState(savedEmail);
+  const [passcode,  setPasscode]  = useState("");
+  const [err,       setErr]       = useState("");
+  const [loading,   setLoading]   = useState(false);
+  const [resetSent, setResetSent] = useState(false);
+
+  const onErr = e => { setErr(AUTH_ERRORS[e.code] || "Something went wrong. Try again."); setLoading(false); };
+
+  const doGoogle = async () => {
     setErr(""); setLoading(true);
     try {
-      if (mode === "forgot") {
-        await sendPasswordResetEmail(auth, email);
-        setResetSent(true);
-      } else if (mode === "register") {
-        await createUserWithEmailAndPassword(auth, email, passcode);
-        localStorage.setItem("cargo-email", email);
-      } else {
-        await signInWithEmailAndPassword(auth, email, passcode);
-        localStorage.setItem("cargo-email", email);
-      }
-    } catch (e) {
-      setErr(AUTH_ERRORS[e.code] || "Something went wrong. Try again.");
-    }
+      await signInWithPopup(auth, new GoogleAuthProvider());
+      localStorage.setItem("cargo-provider", "google");
+      localStorage.removeItem("cargo-email");
+    } catch(e) { onErr(e); }
+  };
+
+  const doApple = async () => {
+    setErr(""); setLoading(true);
+    try {
+      await signInWithPopup(auth, new OAuthProvider("apple.com"));
+      localStorage.setItem("cargo-provider", "apple");
+      localStorage.removeItem("cargo-email");
+    } catch(e) { onErr(e); }
+  };
+
+  const doEmail = async (register) => {
+    setErr(""); setLoading(true);
+    try {
+      if (register) await createUserWithEmailAndPassword(auth, email, passcode);
+      else          await signInWithEmailAndPassword(auth, email, passcode);
+      localStorage.setItem("cargo-email", email);
+      localStorage.setItem("cargo-provider", "email");
+    } catch(e) { onErr(e); }
+  };
+
+  const doReset = async () => {
+    setErr(""); setLoading(true);
+    try { await sendPasswordResetEmail(auth, email); setResetSent(true); }
+    catch(e) { onErr(e); }
     setLoading(false);
+  };
+
+  const forget = () => {
+    localStorage.removeItem("cargo-email");
+    localStorage.removeItem("cargo-provider");
+    setMode("new"); setEmail(""); setPasscode(""); setErr("");
   };
 
   const ff = e => { e.target.style.borderColor = C.primary; };
   const fb = e => { e.target.style.borderColor = C.border; };
-  const link = (label, onClick) => (
-    <span onClick={onClick} style={{ color:C.primary, cursor:"pointer", fontWeight:600 }}>{label}</span>
+
+  const Lnk = ({ children, onClick }) => (
+    <span onClick={onClick} style={{ color:C.primary, cursor:"pointer", fontWeight:600 }}>{children}</span>
   );
 
-  const titles = { passcode:"Welcome back", full:"Sign in", register:"Create account", forgot:"Reset passcode" };
-  const canSubmit = !loading && (mode === "forgot" ? email : email && passcode);
+  const SocialBtn = ({ onClick, bg, color, border, children }) => (
+    <button onClick={onClick} disabled={loading}
+      style={{ width:"100%", padding:"11px 14px", fontSize:14, fontWeight:600, background:bg, color, border:`1px solid ${border||"transparent"}`, borderRadius:8, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:10, fontFamily:"inherit", marginBottom:10 }}>
+      {children}
+    </button>
+  );
+
+  const Divider = () => (
+    <div style={{ display:"flex", alignItems:"center", gap:12, margin:"4px 0 16px" }}>
+      <div style={{ flex:1, height:1, background:C.border }} />
+      <span style={{ fontSize:11, color:C.subtle }}>or</span>
+      <div style={{ flex:1, height:1, background:C.border }} />
+    </div>
+  );
+
+  const FieldInput = ({ label, type, value, onChange, autoFocus: af, onEnter }) => (
+    <div style={{ marginBottom:14, textAlign:"left" }}>
+      <div style={{ fontSize:11, color:C.muted, marginBottom:5, fontWeight:600, textTransform:"uppercase", letterSpacing:"0.05em" }}>{label}</div>
+      <input type={type} value={value} autoFocus={af} onChange={onChange}
+        onKeyDown={e => e.key==="Enter" && onEnter && onEnter()}
+        style={{ ...S.input, direction:"ltr", ...(type==="password"?{textAlign:"center",letterSpacing:"0.2em"}:{}) }}
+        onFocus={ff} onBlur={fb} />
+    </div>
+  );
+
+  const Err = () => err ? <div style={{ color:C.danger, fontSize:12, marginBottom:12, textAlign:"left" }}>{err}</div> : null;
 
   return (
     <div style={{ minHeight:"100vh", background:C.bg, display:"flex", alignItems:"center", justifyContent:"center" }}>
-      <div style={{ background:C.surface, borderRadius:16, padding:"40px 48px", boxShadow:"0 4px 24px rgba(0,0,0,0.08)", border:`1px solid ${C.border}`, textAlign:"center", minWidth:340 }}>
-        <div style={{ background:C.primary, width:48, height:48, borderRadius:12, display:"flex", alignItems:"center", justifyContent:"center", fontSize:22, margin:"0 auto 16px" }}>✈️</div>
-        <div style={{ fontSize:20, fontWeight:700, color:C.text, marginBottom:4 }}>Cargo Supply CRM</div>
-        <div style={{ fontSize:13, color:C.muted, marginBottom:28 }}>{titles[mode]}</div>
+      <div style={{ background:C.surface, borderRadius:16, padding:"40px 44px", boxShadow:"0 4px 24px rgba(0,0,0,0.08)", border:`1px solid ${C.border}`, textAlign:"center", width:360 }}>
+        <div style={{ background:C.primary, width:48, height:48, borderRadius:12, display:"flex", alignItems:"center", justifyContent:"center", fontSize:22, margin:"0 auto 14px" }}>✈️</div>
+        <div style={{ fontSize:20, fontWeight:700, color:C.text, marginBottom:24 }}>Cargo Supply CRM</div>
 
-        {/* Email — shown for all modes except "passcode" */}
-        {mode !== "passcode" && (
-          <div style={{ marginBottom:14, textAlign:"left" }}>
-            <div style={{ fontSize:11, color:C.muted, marginBottom:5, fontWeight:600, textTransform:"uppercase", letterSpacing:"0.05em" }}>Email</div>
-            <input type="email" value={email} autoFocus placeholder="you@example.com"
-              onChange={e => setEmail(e.target.value)}
-              onKeyDown={e => e.key==="Enter" && submit()}
-              style={{ ...S.input, direction:"ltr" }} onFocus={ff} onBlur={fb} />
+        {/* ── RETURNING: GOOGLE ─────────────────────────── */}
+        {mode === "google-return" && <>
+          <div style={{ fontSize:13, color:C.muted, marginBottom:20 }}>Welcome back</div>
+          <SocialBtn onClick={doGoogle} bg="#fff" color="#3c4043" border={C.border}>
+            <GoogleIcon /> Continue with Google
+          </SocialBtn>
+          <Err />
+          <div style={{ fontSize:12, color:C.muted, marginTop:6 }}>
+            <Lnk onClick={forget}>Not you? Switch account</Lnk>
           </div>
-        )}
+        </>}
 
-        {/* Passcode — shown for passcode / full / register */}
-        {mode !== "forgot" && (
-          <div style={{ marginBottom:14, textAlign:"left" }}>
-            {mode === "passcode" && (
-              <div style={{ fontSize:12, color:C.muted, marginBottom:8, textAlign:"center" }}>
-                {email} &nbsp;·&nbsp; {link("Not you?", () => { localStorage.removeItem("cargo-email"); setMode("full"); setEmail(""); setPasscode(""); setErr(""); })}
-              </div>
-            )}
-            <div style={{ fontSize:11, color:C.muted, marginBottom:5, fontWeight:600, textTransform:"uppercase", letterSpacing:"0.05em" }}>Passcode</div>
-            <input type="password" value={passcode} autoFocus={mode==="passcode"} placeholder="••••••"
-              onChange={e => setPasscode(e.target.value)}
-              onKeyDown={e => e.key==="Enter" && submit()}
-              style={{ ...S.input, direction:"ltr", textAlign:"center", letterSpacing:"0.2em" }} onFocus={ff} onBlur={fb} />
+        {/* ── RETURNING: APPLE ──────────────────────────── */}
+        {mode === "apple-return" && <>
+          <div style={{ fontSize:13, color:C.muted, marginBottom:20 }}>Welcome back</div>
+          <SocialBtn onClick={doApple} bg="#000" color="#fff">
+            <AppleIcon /> Continue with Apple
+          </SocialBtn>
+          <Err />
+          <div style={{ fontSize:12, color:C.muted, marginTop:6 }}>
+            <Lnk onClick={forget}>Not you? Switch account</Lnk>
           </div>
-        )}
+        </>}
 
-        {resetSent
-          ? <div style={{ color:C.success, fontSize:13, marginBottom:16 }}>Reset link sent! Check your email.</div>
-          : err && <div style={{ color:C.danger, fontSize:12, marginBottom:12, textAlign:"left" }}>{err}</div>
-        }
-
-        {!resetSent && (
-          <button onClick={submit} disabled={!canSubmit}
-            style={{ ...S.btn, width:"100%", padding:"11px 0", fontSize:14, background:canSubmit?C.primary:C.border, cursor:canSubmit?"pointer":"not-allowed" }}>
-            {loading ? "Please wait…" : mode==="forgot" ? "Send Reset Link" : mode==="register" ? "Create Account" : "Enter"}
+        {/* ── RETURNING: PASSCODE ───────────────────────── */}
+        {mode === "passcode" && <>
+          <div style={{ fontSize:13, color:C.muted, marginBottom:20 }}>
+            {email}&nbsp;·&nbsp;<Lnk onClick={forget}>Not you?</Lnk>
+          </div>
+          <FieldInput label="Passcode" type="password" value={passcode} autoFocus onChange={e => setPasscode(e.target.value)} onEnter={() => doEmail(false)} />
+          <Err />
+          <button onClick={() => doEmail(false)} disabled={!passcode || loading}
+            style={{ ...S.btn, width:"100%", padding:"11px 0", fontSize:14, background:passcode&&!loading?C.primary:C.border, cursor:passcode&&!loading?"pointer":"not-allowed", marginBottom:16 }}>
+            {loading ? "Please wait…" : "Enter"}
           </button>
-        )}
+          <div style={{ fontSize:12, color:C.muted, display:"flex", flexDirection:"column", gap:8 }}>
+            <div>Forgot passcode? <Lnk onClick={() => { setMode("forgot"); setErr(""); }}>Reset via email</Lnk></div>
+            <Divider />
+            <SocialBtn onClick={doGoogle} bg="#fff" color="#3c4043" border={C.border}>
+              <GoogleIcon /> Sign in with Google instead
+            </SocialBtn>
+          </div>
+        </>}
 
-        <div style={{ marginTop:16, fontSize:12, color:C.muted, display:"flex", flexDirection:"column", gap:6, alignItems:"center" }}>
-          {(mode === "passcode" || mode === "full") && (
-            <div>Forgot passcode? {link("Reset via email", () => { setMode("forgot"); setErr(""); setPasscode(""); })}</div>
-          )}
-          {mode === "full" && <div>No account? {link("Create one", () => { setMode("register"); setErr(""); })}</div>}
-          {(mode === "register" || mode === "forgot" || resetSent) && (
-            <div>{link("← Back to sign in", () => { setMode(savedEmail?"passcode":"full"); setErr(""); setPasscode(""); setResetSent(false); })}</div>
-          )}
-        </div>
+        {/* ── NEW USER / DEVICE ─────────────────────────── */}
+        {mode === "new" && <>
+          <SocialBtn onClick={doGoogle} bg="#fff" color="#3c4043" border={C.border}>
+            <GoogleIcon /> Continue with Google
+          </SocialBtn>
+          <SocialBtn onClick={doApple} bg="#000" color="#fff">
+            <AppleIcon /> Continue with Apple
+          </SocialBtn>
+          <Divider />
+          <FieldInput label="Email" type="email" value={email} autoFocus onChange={e => setEmail(e.target.value)} />
+          <FieldInput label="Passcode" type="password" value={passcode} onChange={e => setPasscode(e.target.value)} onEnter={() => doEmail(false)} />
+          <Err />
+          <button onClick={() => doEmail(false)} disabled={!email||!passcode||loading}
+            style={{ ...S.btn, width:"100%", padding:"11px 0", fontSize:14, background:email&&passcode&&!loading?C.primary:C.border, cursor:email&&passcode&&!loading?"pointer":"not-allowed", marginBottom:14 }}>
+            {loading ? "Please wait…" : "Sign In"}
+          </button>
+          <div style={{ fontSize:12, color:C.muted, display:"flex", flexDirection:"column", gap:6 }}>
+            <div>No account? <Lnk onClick={() => { setMode("register"); setErr(""); }}>Create one</Lnk></div>
+            <div>Forgot passcode? <Lnk onClick={() => { setMode("forgot"); setErr(""); }}>Reset via email</Lnk></div>
+          </div>
+        </>}
+
+        {/* ── REGISTER ──────────────────────────────────── */}
+        {mode === "register" && <>
+          <div style={{ fontSize:13, color:C.muted, marginBottom:20 }}>Create a new account</div>
+          <SocialBtn onClick={doGoogle} bg="#fff" color="#3c4043" border={C.border}>
+            <GoogleIcon /> Sign up with Google
+          </SocialBtn>
+          <SocialBtn onClick={doApple} bg="#000" color="#fff">
+            <AppleIcon /> Sign up with Apple
+          </SocialBtn>
+          <Divider />
+          <FieldInput label="Email" type="email" value={email} autoFocus onChange={e => setEmail(e.target.value)} />
+          <FieldInput label="Passcode" type="password" value={passcode} onChange={e => setPasscode(e.target.value)} onEnter={() => doEmail(true)} />
+          <Err />
+          <button onClick={() => doEmail(true)} disabled={!email||!passcode||loading}
+            style={{ ...S.btn, width:"100%", padding:"11px 0", fontSize:14, background:email&&passcode&&!loading?C.primary:C.border, cursor:email&&passcode&&!loading?"pointer":"not-allowed", marginBottom:14 }}>
+            {loading ? "Please wait…" : "Create Account"}
+          </button>
+          <div style={{ fontSize:12, color:C.muted }}>
+            Already have an account? <Lnk onClick={() => { setMode("new"); setErr(""); }}>Sign in</Lnk>
+          </div>
+        </>}
+
+        {/* ── FORGOT PASSCODE ───────────────────────────── */}
+        {mode === "forgot" && <>
+          <div style={{ fontSize:13, color:C.muted, marginBottom:20 }}>Enter your email to reset your passcode</div>
+          {resetSent
+            ? <div style={{ color:C.success, fontSize:14, marginBottom:16 }}>Reset link sent! Check your email.</div>
+            : <>
+                <FieldInput label="Email" type="email" value={email} autoFocus onChange={e => setEmail(e.target.value)} onEnter={doReset} />
+                <Err />
+                <button onClick={doReset} disabled={!email||loading}
+                  style={{ ...S.btn, width:"100%", padding:"11px 0", fontSize:14, background:email&&!loading?C.primary:C.border, cursor:email&&!loading?"pointer":"not-allowed", marginBottom:14 }}>
+                  {loading ? "Please wait…" : "Send Reset Link"}
+                </button>
+              </>
+          }
+          <div style={{ fontSize:12, color:C.muted }}>
+            <Lnk onClick={() => { setMode(savedEmail?"passcode":"new"); setErr(""); setResetSent(false); }}>← Back to sign in</Lnk>
+          </div>
+        </>}
+
       </div>
     </div>
   );
