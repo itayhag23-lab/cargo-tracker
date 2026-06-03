@@ -528,10 +528,13 @@ export default function App() {
     const unsub = onSnapshot(SHEETS_DOC, snap => {
       if (snap.exists()) { setSheets(snap.data().sheets || DEFAULT_SHEETS); }
       else { setDoc(SHEETS_DOC, { sheets: DEFAULT_SHEETS }); setSheets(DEFAULT_SHEETS); }
+    }, () => {
+      setSheets(DEFAULT_SHEETS);
+      setSyncStatus("error");
     });
     getDoc(SETTINGS_DOC).then(snap => {
       if (snap.exists()) setTemplate(snap.data().template || DEFAULT_TEMPLATE);
-    });
+    }).catch(() => {});
     return () => unsub();
   }, [unlocked]);
 
@@ -662,8 +665,8 @@ export default function App() {
                 : "All caught up"
               }
               &nbsp;&middot;&nbsp;
-              <span style={{ color:syncStatus==="syncing"?C.warning:C.success, fontWeight:600 }}>
-                {syncStatus==="syncing" ? "Syncing\u2026" : "Saved \u2713"}
+              <span style={{ color:syncStatus==="syncing"?C.warning:syncStatus==="error"?C.danger:C.success, fontWeight:600 }}>
+                {syncStatus==="syncing" ? "Syncing\u2026" : syncStatus==="error" ? "Offline (local only)" : "Saved \u2713"}
               </span>
             </div>
           </div>
