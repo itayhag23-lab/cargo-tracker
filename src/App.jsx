@@ -19,7 +19,17 @@ const settingsDoc = uid => doc(db, "users", uid, "cargo", "settings");
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 const uid      = () => Math.random().toString(36).slice(2, 9);
 const cleanNum = v  => parseFloat(String(v).replace(/[$,\s=]/g, "")) || 0;
-const cleanBool= v  => v === true || String(v).toLowerCase() === "yes" || String(v).toLowerCase() === "\u05DB\u05DF";
+const cleanBool= v  => v === true || String(v).toLowerCase() === "yes" || String(v).toLowerCase() === "כן";
+
+const useIsMobile = () => {
+  const [mobile, setMobile] = useState(() => window.innerWidth < 768);
+  useEffect(() => {
+    const fn = () => setMobile(window.innerWidth < 768);
+    window.addEventListener("resize", fn);
+    return () => window.removeEventListener("resize", fn);
+  }, []);
+  return mobile;
+};
 
 // ─── EMAIL TEMPLATE ───────────────────────────────────────────────────────────
 const DEFAULT_TEMPLATE = [
@@ -76,7 +86,7 @@ function parseWorkbook(wb) {
     let supplier  = "";
     for (let i = 0; i < Math.min(rawRows.length, 5); i++) {
       const row = rawRows[i];
-      if (row.some(c => String(c).trim() === "\u05DE\u05D5\u05E6\u05E8")) { headerIdx = i; break; }
+      if (row.some(c => String(c).trim() === "מוצר")) { headerIdx = i; break; }
       if (i === 1 && row[0]) supplier = String(row[0]).trim();
     }
     if (headerIdx === -1) continue;
@@ -85,14 +95,14 @@ function parseWorkbook(wb) {
     const dataRows = rawRows.slice(headerIdx + 1);
     const idx = name => headers.findIndex(h => h === name);
 
-    const nameIdx  = idx("\u05DE\u05D5\u05E6\u05E8");
-    const packIdx  = idx("\u05D9\u05D7\u05D9\u05D3\u05D5\u05EA \u05D1\u05DE\u05D0\u05E8\u05D6");
-    const qtyIdx   = idx("\u05DB\u05DE\u05D5\u05EA \u05DC\u05D4\u05D6\u05DE\u05E0\u05D4");
-    const costIdx  = idx("\u05E2\u05DC\u05D5\u05EA \u05DC\u05D9\u05D7\u05D9\u05D3\u05D4");
+    const nameIdx  = idx("מוצר");
+    const packIdx  = idx("יחידות במארז");
+    const qtyIdx   = idx("כמות להזמנה");
+    const costIdx  = idx("עלות ליחידה");
     const modelIdx = idx("MODEL Number");
-    const rcvdIdx  = idx("\u05E7\u05D9\u05D1\u05DC\u05E0\u05D5 \u05D0\u05EA \u05D4\u05D4\u05D6\u05DE\u05E0\u05D4");
+    const rcvdIdx  = idx("קיבלנו את ההזמנה");
     const linkIdx  = idx("Link");
-    const aNameIdx = idx("\u05E9\u05DD \u05D1\u05D0\u05DE\u05D6\u05D5\u05DF");
+    const aNameIdx = idx("שם באמזון");
 
     if (nameIdx === -1) continue;
 
@@ -117,7 +127,7 @@ function parseWorkbook(wb) {
         amazonName:   aNameIdx >= 0 ? String(row[aNameIdx] || "").trim() : "",
         notes:        "",
       }))
-      .filter(r => r.name.length > 0 && !r.name.startsWith("\u05DE\u05D3\u05D1\u05E7\u05D5\u05EA"));
+      .filter(r => r.name.length > 0 && !r.name.startsWith("מדבקות"));
 
     if (!items.length) continue;
 
@@ -198,14 +208,15 @@ function Spinner() {
 }
 
 // ─── QTY STEPPER ─────────────────────────────────────────────────────────────
-function QtyStep({ value, onChange }) {
+function QtyStep({ value, onChange, large }) {
+  const sz = large ? 36 : 22;
   return (
-    <div style={{ display:"flex", alignItems:"center", gap:4, justifyContent:"center" }}>
-      <button style={S.stepBtn} onClick={() => onChange(Math.max(0, value - 1))}>−</button>
-      <span style={{ minWidth:28, textAlign:"center", fontFamily:"monospace", fontWeight:700, fontSize:13, color:value > 0 ? C.primary : C.subtle }}>
+    <div style={{ display:"flex", alignItems:"center", gap:large?8:4, justifyContent:"center" }}>
+      <button style={{ ...S.stepBtn, width:sz, height:sz, fontSize:large?18:14 }} onClick={() => onChange(Math.max(0, value - 1))}>−</button>
+      <span style={{ minWidth:large?36:28, textAlign:"center", fontFamily:"monospace", fontWeight:700, fontSize:large?15:13, color:value > 0 ? C.primary : C.subtle }}>
         {value}
       </span>
-      <button style={S.stepBtn} onClick={() => onChange(value + 1)}>+</button>
+      <button style={{ ...S.stepBtn, width:sz, height:sz, fontSize:large?18:14 }} onClick={() => onChange(value + 1)}>+</button>
     </div>
   );
 }
@@ -357,8 +368,8 @@ function LoginScreen() {
   const Err = () => err ? <div style={{ color:C.danger, fontSize:12, marginBottom:12, textAlign:"left" }}>{err}</div> : null;
 
   return (
-    <div style={{ minHeight:"100vh", background:C.bg, display:"flex", alignItems:"center", justifyContent:"center" }}>
-      <div style={{ background:C.surface, borderRadius:16, padding:"40px 44px", boxShadow:"0 4px 24px rgba(0,0,0,0.08)", border:`1px solid ${C.border}`, textAlign:"center", width:360 }}>
+    <div style={{ minHeight:"100vh", background:C.bg, display:"flex", alignItems:"center", justifyContent:"center", padding:"16px" }}>
+      <div style={{ background:C.surface, borderRadius:16, padding:"40px 44px", boxShadow:"0 4px 24px rgba(0,0,0,0.08)", border:`1px solid ${C.border}`, textAlign:"center", width:"min(360px, calc(100vw - 32px))" }}>
         <div style={{ background:C.primary, width:48, height:48, borderRadius:12, display:"flex", alignItems:"center", justifyContent:"center", fontSize:22, margin:"0 auto 14px" }}>✈️</div>
         <div style={{ fontSize:20, fontWeight:700, color:C.text, marginBottom:24 }}>Cargo Supply CRM</div>
 
@@ -377,7 +388,7 @@ function LoginScreen() {
         {/* ── RETURNING: PASSCODE ───────────────────────── */}
         {mode === "passcode" && <>
           <div style={{ fontSize:13, color:C.muted, marginBottom:20 }}>
-            {email}&nbsp;·&nbsp;<Lnk onClick={forget}>Not you?</Lnk>
+            {email}&nbsp;&middot;&nbsp;<Lnk onClick={forget}>Not you?</Lnk>
           </div>
           <FieldInput label="Passcode" type="password" value={passcode} autoFocus onChange={e => setPasscode(e.target.value)} onEnter={() => doEmail(false)} />
           <Err />
@@ -478,8 +489,8 @@ function ItemModal({ item, isAmazon, onSave, onClose }) {
   ];
 
   return (
-    <div style={{ position:"fixed", inset:0, background:"rgba(15,23,42,0.4)", zIndex:50, display:"flex", alignItems:"center", justifyContent:"center" }} onClick={onClose}>
-      <div style={{ background:C.surface, borderRadius:14, padding:28, width:440, maxHeight:"85vh", overflowY:"auto", boxShadow:"0 20px 60px rgba(0,0,0,0.15)", border:`1px solid ${C.border}` }} onClick={e => e.stopPropagation()}>
+    <div style={{ position:"fixed", inset:0, background:"rgba(15,23,42,0.4)", zIndex:50, display:"flex", alignItems:"center", justifyContent:"center", padding:"16px" }} onClick={onClose}>
+      <div style={{ background:C.surface, borderRadius:14, padding:28, width:"min(440px, calc(100vw - 32px))", maxHeight:"85vh", overflowY:"auto", boxShadow:"0 20px 60px rgba(0,0,0,0.15)", border:`1px solid ${C.border}` }} onClick={e => e.stopPropagation()}>
         <div style={{ fontSize:16, fontWeight:700, marginBottom:20, color:C.text }}>{item ? "Edit Item" : "Add New Item"}</div>
         {fields.map(f => (
           <div key={f.key} style={{ marginBottom:14 }}>
@@ -512,8 +523,8 @@ function SheetModal({ sheet, onSave, onClose }) {
   const fb = e => { e.target.style.borderColor = C.border; };
 
   return (
-    <div style={{ position:"fixed", inset:0, background:"rgba(15,23,42,0.4)", zIndex:50, display:"flex", alignItems:"center", justifyContent:"center" }} onClick={onClose}>
-      <div style={{ background:C.surface, borderRadius:14, padding:28, width:380, boxShadow:"0 20px 60px rgba(0,0,0,0.15)", border:`1px solid ${C.border}` }} onClick={e => e.stopPropagation()}>
+    <div style={{ position:"fixed", inset:0, background:"rgba(15,23,42,0.4)", zIndex:50, display:"flex", alignItems:"center", justifyContent:"center", padding:"16px" }} onClick={onClose}>
+      <div style={{ background:C.surface, borderRadius:14, padding:28, width:"min(380px, calc(100vw - 32px))", boxShadow:"0 20px 60px rgba(0,0,0,0.15)", border:`1px solid ${C.border}` }} onClick={e => e.stopPropagation()}>
         <div style={{ fontSize:16, fontWeight:700, marginBottom:20, color:C.text }}>{sheet ? "Edit Tab" : "New Tab"}</div>
 
         <div style={{ marginBottom:14 }}>
@@ -555,8 +566,8 @@ function SheetModal({ sheet, onSave, onClose }) {
 function TemplateEditor({ template, onSave, onClose }) {
   const [val, setVal] = useState(template);
   return (
-    <div style={{ position:"fixed", inset:0, background:"rgba(15,23,42,0.4)", zIndex:50, display:"flex", alignItems:"center", justifyContent:"center" }} onClick={onClose}>
-      <div style={{ background:C.surface, borderRadius:14, padding:28, width:520, boxShadow:"0 20px 60px rgba(0,0,0,0.15)", border:`1px solid ${C.border}` }} onClick={e => e.stopPropagation()}>
+    <div style={{ position:"fixed", inset:0, background:"rgba(15,23,42,0.4)", zIndex:50, display:"flex", alignItems:"center", justifyContent:"center", padding:"16px" }} onClick={onClose}>
+      <div style={{ background:C.surface, borderRadius:14, padding:28, width:"min(520px, calc(100vw - 32px))", boxShadow:"0 20px 60px rgba(0,0,0,0.15)", border:`1px solid ${C.border}` }} onClick={e => e.stopPropagation()}>
         <div style={{ fontSize:16, fontWeight:700, marginBottom:8, color:C.text }}>Edit Email Template</div>
         <div style={{ fontSize:12, color:C.muted, marginBottom:16, lineHeight:1.8 }}>
           Variables:&nbsp;
@@ -582,7 +593,7 @@ function TemplateEditor({ template, onSave, onClose }) {
 function SendFlow({ orderItems, sheetName, template, onClose }) {
   const [step,    setStep]    = useState("input");
   const [to,      setTo]      = useState("");
-  const [subject, setSubject] = useState("Supply Order \u2013 " + new Date().toLocaleDateString());
+  const [subject, setSubject] = useState("Supply Order – " + new Date().toLocaleDateString());
   const [preview, setPreview] = useState(null);
   const total = orderItems.reduce((s,i) => s + i.orderQty * i.costPerUnit, 0).toFixed(2);
 
@@ -609,9 +620,9 @@ function SendFlow({ orderItems, sheetName, template, onClose }) {
   const box = { background:C.bg, borderRadius:6, padding:"8px 12px", fontSize:13, color:C.text };
 
   return (
-    <div style={{ position:"fixed", inset:0, background:"rgba(15,23,42,0.4)", zIndex:50, display:"flex", alignItems:"center", justifyContent:"center" }}
+    <div style={{ position:"fixed", inset:0, background:"rgba(15,23,42,0.4)", zIndex:50, display:"flex", alignItems:"center", justifyContent:"center", padding:"16px" }}
       onClick={step==="sending" ? undefined : onClose}>
-      <div style={{ background:C.surface, borderRadius:14, padding:28, width:480, maxHeight:"85vh", overflowY:"auto", boxShadow:"0 20px 60px rgba(0,0,0,0.15)", border:`1px solid ${C.border}` }}
+      <div style={{ background:C.surface, borderRadius:14, padding:28, width:"min(480px, calc(100vw - 32px))", maxHeight:"85vh", overflowY:"auto", boxShadow:"0 20px 60px rgba(0,0,0,0.15)", border:`1px solid ${C.border}` }}
         onClick={e => e.stopPropagation()}>
 
         {step === "input" && <>
@@ -675,8 +686,65 @@ function SendFlow({ orderItems, sheetName, template, onClose }) {
   );
 }
 
+// ─── MOBILE ITEM CARD ────────────────────────────────────────────────────────
+function MobileItemCard({ item, sheet, onEdit, onDelete, onPatch }) {
+  return (
+    <div style={{ background:C.surface, borderRadius:10, border:`1px solid ${C.border}`, padding:"14px", marginBottom:8 }}>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:10, gap:8 }}>
+        <div style={{ flex:1, minWidth:0 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:4 }}>
+            {item.orderQty > 0 && !item.received && (
+              <span style={{ width:7, height:7, borderRadius:"50%", background:sheet.color, flexShrink:0 }} />
+            )}
+            <span style={{ fontSize:14, fontWeight:600, color:item.received?C.subtle:C.text, textDecoration:item.received?"line-through":"none", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+              {item.name}
+            </span>
+          </div>
+          <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
+            <Badge label={sheet.supplier} color={sheet.color} />
+            {item.received && <Badge label="Rcvd" color={C.success} />}
+          </div>
+        </div>
+        <button
+          onClick={() => onPatch(item.id, { received:!item.received })}
+          title={item.received ? "Mark as pending" : "Mark as received"}
+          style={{ width:36, height:36, borderRadius:8, border:`2px solid ${item.received?C.success:C.border}`, background:item.received?`${C.success}15`:"transparent", cursor:"pointer", fontSize:16, display:"flex", alignItems:"center", justifyContent:"center", color:C.success, flexShrink:0, transition:"all .15s" }}>
+          {item.received ? "✓" : ""}
+        </button>
+      </div>
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+        <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+          <QtyStep large value={item.orderQty} onChange={v => onPatch(item.id, { orderQty:v })} />
+          {item.orderQty > 0 && !item.received && (
+            <span style={{ fontFamily:"monospace", fontWeight:700, color:C.primary, fontSize:14 }}>
+              ${(item.orderQty * item.costPerUnit).toFixed(2)}
+            </span>
+          )}
+        </div>
+        <div style={{ display:"flex", gap:4 }}>
+          <button style={{ ...S.icon, padding:"8px 12px", fontSize:16 }} onClick={() => onEdit(item)}
+            onMouseEnter={e=>{e.currentTarget.style.color=C.primary;e.currentTarget.style.background=`${C.primary}10`;}}
+            onMouseLeave={e=>{e.currentTarget.style.color=C.subtle;e.currentTarget.style.background="transparent";}}>&#9998;</button>
+          <button style={{ ...S.icon, padding:"8px 12px", fontSize:16 }} onClick={() => onDelete(item.id)}
+            onMouseEnter={e=>{e.currentTarget.style.color=C.danger;e.currentTarget.style.background=`${C.danger}10`;}}
+            onMouseLeave={e=>{e.currentTarget.style.color=C.subtle;e.currentTarget.style.background="transparent";}}>&#215;</button>
+        </div>
+      </div>
+      {item.link && item.link.startsWith("http") && (
+        <div style={{ marginTop:10 }}>
+          <a href={item.link} target="_blank" rel="noopener noreferrer"
+            style={{ color:C.primary, fontSize:12, textDecoration:"none", fontWeight:500 }}>
+            &#128279; Open Link
+          </a>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────
 export default function App() {
+  const isMobile = useIsMobile();
   const [user,           setUser]           = useState(undefined); // undefined = loading
   const [sheets,         setSheets]         = useState(null);
   const [template,       setTemplate]       = useState(DEFAULT_TEMPLATE);
@@ -778,9 +846,9 @@ export default function App() {
           setActiveSheet(0);
           alert(added > 0
             ? "Added " + added + " new item(s)."
-            : "No new items \u2014 everything is already up to date.");
+            : "No new items — everything is already up to date.");
         } else {
-          alert("No data found. Make sure sheets have a \u05DE\u05D5\u05E6\u05E8 column header.");
+          alert("No data found. Make sure sheets have a מוצר column header.");
         }
       } catch (err) { alert("Error: " + err.message); }
       e.target.value = "";
@@ -828,68 +896,111 @@ export default function App() {
         {"@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap');" +
          "::-webkit-scrollbar{width:5px;height:5px}" +
          "::-webkit-scrollbar-track{background:" + C.bg + "}" +
-         "::-webkit-scrollbar-thumb{background:" + C.border + ";border-radius:3px}"}
+         "::-webkit-scrollbar-thumb{background:" + C.border + ";border-radius:3px}" +
+         "*{-webkit-tap-highlight-color:transparent}" +
+         "@media(max-width:767px){input,select,textarea{font-size:16px!important}}"}
       </style>
 
       {/* ── HEADER ── */}
-      <div style={{ background:C.surface, borderBottom:`1px solid ${C.border}`, padding:"0 24px", display:"flex", alignItems:"center", justifyContent:"space-between", height:56, position:"sticky", top:0, zIndex:20, boxShadow:"0 1px 3px rgba(0,0,0,0.05)" }}>
-        <div style={{ display:"flex", alignItems:"center", gap:12 }}>
-          <div style={{ background:C.primary, borderRadius:8, width:34, height:34, display:"flex", alignItems:"center", justifyContent:"center", fontSize:16 }}>&#9992;&#65039;</div>
-          <div>
-            <div style={{ fontSize:14, fontWeight:700, color:C.text }}>Cargo Supply CRM</div>
-            <div style={{ fontSize:11, color:C.subtle }}>
-              {globalOrder > 0
-                ? <span style={{ color:C.primary, fontWeight:600 }}>{globalOrder} items to order &middot; ${globalTotal}</span>
-                : "All caught up"
-              }
-              &nbsp;&middot;&nbsp;
-              <span style={{ color:syncStatus==="syncing"?C.warning:syncStatus==="error"?C.danger:C.success, fontWeight:600 }}>
-                {syncStatus==="syncing" ? "Syncing\u2026" : syncStatus==="error" ? "Offline (local only)" : "Saved \u2713"}
-              </span>
+      <input type="file" accept=".xlsx,.xls,.csv" ref={fileRef} onChange={handleExcel} style={{ display:"none" }} />
+      {isMobile ? (
+        <div style={{ background:C.surface, borderBottom:`1px solid ${C.border}`, position:"sticky", top:0, zIndex:20, boxShadow:"0 1px 3px rgba(0,0,0,0.05)" }}>
+          <div style={{ padding:"10px 16px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+            <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+              <div style={{ background:C.primary, borderRadius:8, width:32, height:32, display:"flex", alignItems:"center", justifyContent:"center", fontSize:15 }}>&#9992;&#65039;</div>
+              <div>
+                <div style={{ fontSize:13, fontWeight:700, color:C.text }}>Cargo Supply CRM</div>
+                <div style={{ fontSize:10, color:C.subtle }}>
+                  {globalOrder > 0
+                    ? <span style={{ color:C.primary, fontWeight:600 }}>{globalOrder} to order &middot; ${globalTotal}</span>
+                    : "All caught up"
+                  }
+                  {" · "}
+                  <span style={{ color:syncStatus==="syncing"?C.warning:syncStatus==="error"?C.danger:C.success, fontWeight:600 }}>
+                    {syncStatus==="syncing" ? "Syncing…" : syncStatus==="error" ? "Offline" : "Saved ✓"}
+                  </span>
+                </div>
+              </div>
             </div>
+            <button onClick={() => signOut(auth)} title={user.email}
+              style={{ ...S.ghost, fontSize:12, padding:"6px 10px" }}
+              onMouseEnter={e=>{e.currentTarget.style.background=C.bg;}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
+              Sign out
+            </button>
+          </div>
+          <div style={{ padding:"0 16px 10px", display:"flex", gap:8 }}>
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search items..."
+              style={{ ...S.input, flex:1, padding:"8px 12px" }}
+              onFocus={e=>{e.target.style.borderColor=C.primary;}} onBlur={e=>{e.target.style.borderColor=C.border;}}
+            />
+            <button style={{ ...S.ghost, borderColor:`${C.primary}40`, color:C.primary, padding:"8px 12px", whiteSpace:"nowrap" }}
+              onClick={()=>setShowAdd(true)}>
+              + Add
+            </button>
+            <button disabled={orderItems.length===0} onClick={()=>setShowEmail(true)}
+              style={{ ...S.btn, background:orderItems.length?C.primary:C.border, color:orderItems.length?"#fff":C.subtle, cursor:orderItems.length?"pointer":"not-allowed", padding:"8px 12px", whiteSpace:"nowrap" }}>
+              {orderItems.length > 0 ? `Order (${orderItems.length})` : "Order"}
+            </button>
           </div>
         </div>
-
-        <div style={{ display:"flex", gap:8, alignItems:"center" }}>
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search items..."
-            style={{ ...S.input, width:180, padding:"7px 12px" }}
-            onFocus={e=>{e.target.style.borderColor=C.primary;}} onBlur={e=>{e.target.style.borderColor=C.border;}}
-          />
-          <input type="file" accept=".xlsx,.xls,.csv" ref={fileRef} onChange={handleExcel} style={{ display:"none" }} />
-          <button style={S.ghost} onClick={()=>fileRef.current.click()}
-            onMouseEnter={e=>{e.currentTarget.style.background=C.bg;}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
-            &#11014; Import Excel
-          </button>
-          <button style={S.ghost} onClick={()=>setShowTpl(true)}
-            onMouseEnter={e=>{e.currentTarget.style.background=C.bg;}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
-            &#9993; Template
-          </button>
-          <button style={{ ...S.ghost, borderColor:`${C.primary}40`, color:C.primary }}
-            onClick={()=>setShowAdd(true)}
-            onMouseEnter={e=>{e.currentTarget.style.background=`${C.primary}08`;}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
-            + Add Item
-          </button>
-          <button disabled={orderItems.length===0} onClick={()=>setShowEmail(true)}
-            style={{ ...S.btn, background:orderItems.length?C.primary:C.border, color:orderItems.length?"#fff":C.subtle, cursor:orderItems.length?"pointer":"not-allowed" }}>
-            &#9993; Order{orderItems.length > 0 ? " (" + orderItems.length + ")" : ""}
-          </button>
-          <button onClick={() => signOut(auth)} title={user.email}
-            style={{ ...S.ghost, fontSize:12, padding:"7px 12px" }}
-            onMouseEnter={e=>{e.currentTarget.style.background=C.bg;}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
-            Sign out
-          </button>
+      ) : (
+        <div style={{ background:C.surface, borderBottom:`1px solid ${C.border}`, padding:"0 24px", display:"flex", alignItems:"center", justifyContent:"space-between", height:56, position:"sticky", top:0, zIndex:20, boxShadow:"0 1px 3px rgba(0,0,0,0.05)" }}>
+          <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+            <div style={{ background:C.primary, borderRadius:8, width:34, height:34, display:"flex", alignItems:"center", justifyContent:"center", fontSize:16 }}>&#9992;&#65039;</div>
+            <div>
+              <div style={{ fontSize:14, fontWeight:700, color:C.text }}>Cargo Supply CRM</div>
+              <div style={{ fontSize:11, color:C.subtle }}>
+                {globalOrder > 0
+                  ? <span style={{ color:C.primary, fontWeight:600 }}>{globalOrder} items to order &middot; ${globalTotal}</span>
+                  : "All caught up"
+                }
+                &nbsp;&middot;&nbsp;
+                <span style={{ color:syncStatus==="syncing"?C.warning:syncStatus==="error"?C.danger:C.success, fontWeight:600 }}>
+                  {syncStatus==="syncing" ? "Syncing…" : syncStatus==="error" ? "Offline (local only)" : "Saved ✓"}
+                </span>
+              </div>
+            </div>
+          </div>
+          <div style={{ display:"flex", gap:8, alignItems:"center" }}>
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search items..."
+              style={{ ...S.input, width:180, padding:"7px 12px" }}
+              onFocus={e=>{e.target.style.borderColor=C.primary;}} onBlur={e=>{e.target.style.borderColor=C.border;}}
+            />
+            <button style={S.ghost} onClick={()=>fileRef.current.click()}
+              onMouseEnter={e=>{e.currentTarget.style.background=C.bg;}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
+              &#11014; Import Excel
+            </button>
+            <button style={S.ghost} onClick={()=>setShowTpl(true)}
+              onMouseEnter={e=>{e.currentTarget.style.background=C.bg;}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
+              &#9993; Template
+            </button>
+            <button style={{ ...S.ghost, borderColor:`${C.primary}40`, color:C.primary }}
+              onClick={()=>setShowAdd(true)}
+              onMouseEnter={e=>{e.currentTarget.style.background=`${C.primary}08`;}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
+              + Add Item
+            </button>
+            <button disabled={orderItems.length===0} onClick={()=>setShowEmail(true)}
+              style={{ ...S.btn, background:orderItems.length?C.primary:C.border, color:orderItems.length?"#fff":C.subtle, cursor:orderItems.length?"pointer":"not-allowed" }}>
+              &#9993; Order{orderItems.length > 0 ? " (" + orderItems.length + ")" : ""}
+            </button>
+            <button onClick={() => signOut(auth)} title={user.email}
+              style={{ ...S.ghost, fontSize:12, padding:"7px 12px" }}
+              onMouseEnter={e=>{e.currentTarget.style.background=C.bg;}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
+              Sign out
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* ── TABS ── */}
-      <div style={{ background:C.surface, borderBottom:`1px solid ${C.border}`, padding:"0 24px", display:"flex", alignItems:"center", gap:0, overflowX:"auto" }}>
+      <div style={{ background:C.surface, borderBottom:`1px solid ${C.border}`, padding:isMobile?"0 12px":"0 24px", display:"flex", alignItems:"center", gap:0, overflowX:"auto" }}>
         {sheets.map((s, i) => {
           const sheetOrder = s.items.filter(it=>it.orderQty>0&&!it.received).length;
           const active     = si === i;
           return (
             <div key={s.id} style={{ display:"flex", alignItems:"center", position:"relative" }}>
               <button onClick={() => { setActiveSheet(i); setSearch(""); }}
-                style={{ padding:"13px 16px", border:"none", background:"transparent", cursor:"pointer", fontFamily:"inherit", fontSize:13, fontWeight:600, color:active?s.color:C.muted, borderBottom:active?`2px solid ${s.color}`:"2px solid transparent", transition:"all .15s", whiteSpace:"nowrap", display:"flex", alignItems:"center", gap:7, outline:"none" }}>
+                style={{ padding:isMobile?"11px 12px":"13px 16px", border:"none", background:"transparent", cursor:"pointer", fontFamily:"inherit", fontSize:13, fontWeight:600, color:active?s.color:C.muted, borderBottom:active?`2px solid ${s.color}`:"2px solid transparent", transition:"all .15s", whiteSpace:"nowrap", display:"flex", alignItems:"center", gap:7, outline:"none" }}>
                 <span style={{ width:7, height:7, borderRadius:"50%", background:s.color, display:"inline-block", flexShrink:0 }} />
                 {s.name}
                 <Badge label={s.supplier} color={s.color} />
@@ -909,139 +1020,197 @@ export default function App() {
           );
         })}
         <button onClick={() => { setEditSheetIdx(null); setShowSheetModal(true); }}
-          style={{ padding:"13px 14px", border:"none", background:"transparent", cursor:"pointer", fontFamily:"inherit", fontSize:13, color:C.subtle, whiteSpace:"nowrap", outline:"none" }}
+          style={{ padding:isMobile?"11px 12px":"13px 14px", border:"none", background:"transparent", cursor:"pointer", fontFamily:"inherit", fontSize:13, color:C.subtle, whiteSpace:"nowrap", outline:"none" }}
           onMouseEnter={e=>{e.currentTarget.style.color=C.primary;}} onMouseLeave={e=>{e.currentTarget.style.color=C.subtle;}}>
           + New Tab
         </button>
       </div>
 
       {/* ── STATS BAR ── */}
-      <div style={{ background:C.surface, borderBottom:`1px solid ${C.border}`, padding:"12px 24px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-        <div style={{ display:"flex", gap:32 }}>
-          {[
-            { label:"Total Items", value:sheet.items.length,                                              color:C.text    },
-            { label:"To Order",    value:orderItems.length,                                               color:C.primary },
-            { label:"Received",    value:sheet.items.filter(i=>i.received).length,                        color:C.success },
-            { label:"Order Total", value:"$" + orderTotal,                                                color:C.warning },
-          ].map(stat => (
-            <div key={stat.label}>
-              <div style={{ fontSize:10, color:C.subtle, textTransform:"uppercase", letterSpacing:"0.06em", fontWeight:600 }}>{stat.label}</div>
-              <div style={{ fontSize:20, fontWeight:700, color:stat.color, lineHeight:1.2 }}>{stat.value}</div>
+      <div style={{ background:C.surface, borderBottom:`1px solid ${C.border}`, padding:isMobile?"10px 16px":"12px 24px" }}>
+        {isMobile ? (
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"10px 20px" }}>
+            {[
+              { label:"Total Items", value:sheet.items.length,                           color:C.text    },
+              { label:"To Order",    value:orderItems.length,                             color:C.primary },
+              { label:"Received",    value:sheet.items.filter(i=>i.received).length,      color:C.success },
+              { label:"Order Total", value:"$" + orderTotal,                              color:C.warning },
+            ].map(stat => (
+              <div key={stat.label}>
+                <div style={{ fontSize:10, color:C.subtle, textTransform:"uppercase", letterSpacing:"0.06em", fontWeight:600 }}>{stat.label}</div>
+                <div style={{ fontSize:18, fontWeight:700, color:stat.color, lineHeight:1.2 }}>{stat.value}</div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+            <div style={{ display:"flex", gap:32 }}>
+              {[
+                { label:"Total Items", value:sheet.items.length,                           color:C.text    },
+                { label:"To Order",    value:orderItems.length,                             color:C.primary },
+                { label:"Received",    value:sheet.items.filter(i=>i.received).length,      color:C.success },
+                { label:"Order Total", value:"$" + orderTotal,                              color:C.warning },
+              ].map(stat => (
+                <div key={stat.label}>
+                  <div style={{ fontSize:10, color:C.subtle, textTransform:"uppercase", letterSpacing:"0.06em", fontWeight:600 }}>{stat.label}</div>
+                  <div style={{ fontSize:20, fontWeight:700, color:stat.color, lineHeight:1.2 }}>{stat.value}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{ display:"flex", gap:8 }}>
+              {orderItems.length > 0 && (
+                <button onClick={resetQty}
+                  style={{ ...S.ghost, color:C.warning, borderColor:`${C.warning}30`, fontSize:12 }}
+                  onMouseEnter={e=>{e.currentTarget.style.background=`${C.warning}08`;}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
+                  &#8634; Reset Qty
+                </button>
+              )}
+              {sheets.length > 1 && (
+                <button onClick={() => deleteSheet(si)}
+                  style={{ ...S.ghost, color:C.danger, borderColor:`${C.danger}30`, fontSize:12 }}
+                  onMouseEnter={e=>{e.currentTarget.style.background=`${C.danger}08`;}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
+                  Delete Tab
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+        {isMobile && (orderItems.length > 0 || sheets.length > 1) && (
+          <div style={{ display:"flex", gap:8, marginTop:10 }}>
+            {orderItems.length > 0 && (
+              <button onClick={resetQty}
+                style={{ ...S.ghost, color:C.warning, borderColor:`${C.warning}30`, fontSize:12, flex:1 }}
+                onMouseEnter={e=>{e.currentTarget.style.background=`${C.warning}08`;}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
+                &#8634; Reset Qty
+              </button>
+            )}
+            {sheets.length > 1 && (
+              <button onClick={() => deleteSheet(si)}
+                style={{ ...S.ghost, color:C.danger, borderColor:`${C.danger}30`, fontSize:12, flex:1 }}
+                onMouseEnter={e=>{e.currentTarget.style.background=`${C.danger}08`;}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
+                Delete Tab
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ── TABLE HEADER (desktop only) ── */}
+      {!isMobile && (
+        <div style={{ display:"grid", gridTemplateColumns:COLS, gap:8, padding:"8px 24px", borderBottom:`1px solid ${C.border}`, position:"sticky", top:56, zIndex:9, background:C.bg }}>
+          {colHeaders.map((h,i) => (
+            <span key={i} style={{ fontSize:10, color:C.subtle, letterSpacing:"0.07em", textTransform:"uppercase", fontWeight:700, textAlign:i===0?"left":"center" }}>
+              {h}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* ── TABLE ROWS (desktop) / CARDS (mobile) ── */}
+      {isMobile ? (
+        <div style={{ padding:"8px 12px", background:C.bg }}>
+          {filtered.length === 0 && (
+            <div style={{ textAlign:"center", padding:60, color:C.subtle, fontSize:13 }}>
+              {search ? "No items match your search." : "No items yet. Tap “+ Add” to get started."}
+            </div>
+          )}
+          {filtered.map(item => (
+            <MobileItemCard
+              key={item.id}
+              item={item}
+              sheet={sheet}
+              onEdit={setEditItem}
+              onDelete={removeItem}
+              onPatch={patchItem}
+            />
+          ))}
+        </div>
+      ) : (
+        <div style={{ background:C.surface }}>
+          {filtered.length === 0 && (
+            <div style={{ textAlign:"center", padding:60, color:C.subtle, fontSize:13 }}>
+              {search ? "No items match your search." : "No items yet. Import Excel or click “+ Add Item”."}
+            </div>
+          )}
+          {filtered.map(item => (
+            <div key={item.id}
+              style={{ display:"grid", gridTemplateColumns:COLS, gap:8, padding:"9px 24px", borderBottom:`1px solid ${C.border}`, alignItems:"center", transition:"background .08s" }}
+              onMouseEnter={e => { e.currentTarget.style.background = C.hover; }}
+              onMouseLeave={e => { e.currentTarget.style.background = C.surface; }}>
+
+              {/* Name */}
+              <div style={{ display:"flex", alignItems:"center", gap:8, overflow:"hidden" }}>
+                {item.orderQty > 0 && !item.received && (
+                  <span style={{ width:6, height:6, borderRadius:"50%", background:sheet.color, flexShrink:0 }} />
+                )}
+                <span title={item.name} onDoubleClick={() => setEditItem(item)}
+                  style={{ fontSize:13, fontWeight:500, color:item.received?C.subtle:C.text, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", textDecoration:item.received?"line-through":"none" }}>
+                  {item.name}
+                </span>
+                {item.received && <Badge label="Rcvd" color={C.success} />}
+              </div>
+
+              {/* Per pack or Amazon name */}
+              {isAmazon
+                ? <InlineEdit value={item.amazonName||""} placeholder="—" onCommit={v => patchItem(item.id, { amazonName:v })} />
+                : <InlineEdit value={item.unitsPerPack} type="number" onCommit={v => patchItem(item.id, { unitsPerPack:v })} />
+              }
+
+              <QtyStep value={item.orderQty} onChange={v => patchItem(item.id, { orderQty:v })} />
+
+              <InlineEdit value={item.costPerUnit>0?item.costPerUnit.toFixed(2):""} type="number" placeholder="0.00" onCommit={v => patchItem(item.id, { costPerUnit:v })} />
+
+              {/* Total */}
+              <div style={{ textAlign:"center", fontFamily:"monospace", fontSize:12, fontWeight:600, color:item.orderQty>0&&!item.received?C.primary:C.subtle }}>
+                {item.orderQty > 0 ? "$" + (item.orderQty*item.costPerUnit).toFixed(2) : "—"}
+              </div>
+
+              {/* Model (Uline only) */}
+              {!isAmazon && (
+                <InlineEdit value={item.modelNumber||""} placeholder="—" onCommit={v => patchItem(item.id, { modelNumber:v })} />
+              )}
+
+              {/* Link */}
+              <div style={{ textAlign:"center" }}>
+                {item.link && item.link.startsWith("http")
+                  ? <a href={item.link} target="_blank" rel="noopener noreferrer"
+                      style={{ color:C.primary, fontSize:12, textDecoration:"none", fontWeight:500 }}>
+                      &#128279; Open
+                    </a>
+                  : <InlineEdit value={item.link||""} placeholder="+ URL" onCommit={v => patchItem(item.id, { link:v })} />
+                }
+              </div>
+
+              {/* Received checkbox */}
+              <div style={{ display:"flex", justifyContent:"center" }}>
+                <button onClick={() => patchItem(item.id, { received:!item.received })}
+                  title={item.received ? "Mark as pending" : "Mark as received"}
+                  style={{ width:22, height:22, borderRadius:5, border:`2px solid ${item.received?C.success:C.border}`, background:item.received?`${C.success}15`:"transparent", cursor:"pointer", fontSize:12, display:"flex", alignItems:"center", justifyContent:"center", color:C.success, transition:"all .15s" }}>
+                  {item.received ? "✓" : ""}
+                </button>
+              </div>
+
+              {/* Edit / Delete */}
+              <div style={{ display:"flex", gap:2, justifyContent:"center" }}>
+                <button style={S.icon} onClick={() => setEditItem(item)}
+                  onMouseEnter={e=>{e.currentTarget.style.color=C.primary;e.currentTarget.style.background=`${C.primary}10`;}}
+                  onMouseLeave={e=>{e.currentTarget.style.color=C.subtle;e.currentTarget.style.background="transparent";}}>
+                  &#9998;
+                </button>
+                <button style={S.icon} onClick={() => removeItem(item.id)}
+                  onMouseEnter={e=>{e.currentTarget.style.color=C.danger;e.currentTarget.style.background=`${C.danger}10`;}}
+                  onMouseLeave={e=>{e.currentTarget.style.color=C.subtle;e.currentTarget.style.background="transparent";}}>
+                  &#215;
+                </button>
+              </div>
             </div>
           ))}
         </div>
-        <div style={{ display:"flex", gap:8 }}>
-          {orderItems.length > 0 && (
-            <button onClick={resetQty}
-              style={{ ...S.ghost, color:C.warning, borderColor:`${C.warning}30`, fontSize:12 }}
-              onMouseEnter={e=>{e.currentTarget.style.background=`${C.warning}08`;}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
-              ↺ Reset Qty
-            </button>
-          )}
-          {sheets.length > 1 && (
-            <button onClick={() => deleteSheet(si)}
-              style={{ ...S.ghost, color:C.danger, borderColor:`${C.danger}30`, fontSize:12 }}
-              onMouseEnter={e=>{e.currentTarget.style.background=`${C.danger}08`;}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
-              Delete Tab
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* ── TABLE HEADER ── */}
-      <div style={{ display:"grid", gridTemplateColumns:COLS, gap:8, padding:"8px 24px", borderBottom:`1px solid ${C.border}`, position:"sticky", top:56, zIndex:9, background:C.bg }}>
-        {colHeaders.map((h,i) => (
-          <span key={i} style={{ fontSize:10, color:C.subtle, letterSpacing:"0.07em", textTransform:"uppercase", fontWeight:700, textAlign:i===0?"left":"center" }}>
-            {h}
-          </span>
-        ))}
-      </div>
-
-      {/* ── TABLE ROWS ── */}
-      <div style={{ background:C.surface }}>
-        {filtered.length === 0 && (
-          <div style={{ textAlign:"center", padding:60, color:C.subtle, fontSize:13 }}>
-            {search ? "No items match your search." : "No items yet. Import Excel or click \u201C+ Add Item\u201D."}
-          </div>
-        )}
-        {filtered.map(item => (
-          <div key={item.id}
-            style={{ display:"grid", gridTemplateColumns:COLS, gap:8, padding:"9px 24px", borderBottom:`1px solid ${C.border}`, alignItems:"center", transition:"background .08s" }}
-            onMouseEnter={e => { e.currentTarget.style.background = C.hover; }}
-            onMouseLeave={e => { e.currentTarget.style.background = C.surface; }}>
-
-            {/* Name */}
-            <div style={{ display:"flex", alignItems:"center", gap:8, overflow:"hidden" }}>
-              {item.orderQty > 0 && !item.received && (
-                <span style={{ width:6, height:6, borderRadius:"50%", background:sheet.color, flexShrink:0 }} />
-              )}
-              <span title={item.name} onDoubleClick={() => setEditItem(item)}
-                style={{ fontSize:13, fontWeight:500, color:item.received?C.subtle:C.text, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", textDecoration:item.received?"line-through":"none" }}>
-                {item.name}
-              </span>
-              {item.received && <Badge label="Rcvd" color={C.success} />}
-            </div>
-
-            {/* Per pack or Amazon name */}
-            {isAmazon
-              ? <InlineEdit value={item.amazonName||""} placeholder="—" onCommit={v => patchItem(item.id, { amazonName:v })} />
-              : <InlineEdit value={item.unitsPerPack} type="number" onCommit={v => patchItem(item.id, { unitsPerPack:v })} />
-            }
-
-            <QtyStep value={item.orderQty} onChange={v => patchItem(item.id, { orderQty:v })} />
-
-            <InlineEdit value={item.costPerUnit>0?item.costPerUnit.toFixed(2):""} type="number" placeholder="0.00" onCommit={v => patchItem(item.id, { costPerUnit:v })} />
-
-            {/* Total */}
-            <div style={{ textAlign:"center", fontFamily:"monospace", fontSize:12, fontWeight:600, color:item.orderQty>0&&!item.received?C.primary:C.subtle }}>
-              {item.orderQty > 0 ? "$" + (item.orderQty*item.costPerUnit).toFixed(2) : "\u2014"}
-            </div>
-
-            {/* Model (Uline only) */}
-            {!isAmazon && (
-              <InlineEdit value={item.modelNumber||""} placeholder="—" onCommit={v => patchItem(item.id, { modelNumber:v })} />
-            )}
-
-            {/* Link */}
-            <div style={{ textAlign:"center" }}>
-              {item.link && item.link.startsWith("http")
-                ? <a href={item.link} target="_blank" rel="noopener noreferrer"
-                    style={{ color:C.primary, fontSize:12, textDecoration:"none", fontWeight:500 }}>
-                    &#128279; Open
-                  </a>
-                : <InlineEdit value={item.link||""} placeholder="+ URL" onCommit={v => patchItem(item.id, { link:v })} />
-              }
-            </div>
-
-            {/* Received checkbox */}
-            <div style={{ display:"flex", justifyContent:"center" }}>
-              <button onClick={() => patchItem(item.id, { received:!item.received })}
-                title={item.received ? "Mark as pending" : "Mark as received"}
-                style={{ width:22, height:22, borderRadius:5, border:`2px solid ${item.received?C.success:C.border}`, background:item.received?`${C.success}15`:"transparent", cursor:"pointer", fontSize:12, display:"flex", alignItems:"center", justifyContent:"center", color:C.success, transition:"all .15s" }}>
-                {item.received ? "\u2713" : ""}
-              </button>
-            </div>
-
-            {/* Edit / Delete */}
-            <div style={{ display:"flex", gap:2, justifyContent:"center" }}>
-              <button style={S.icon} onClick={() => setEditItem(item)}
-                onMouseEnter={e=>{e.currentTarget.style.color=C.primary;e.currentTarget.style.background=`${C.primary}10`;}}
-                onMouseLeave={e=>{e.currentTarget.style.color=C.subtle;e.currentTarget.style.background="transparent";}}>
-                &#9998;
-              </button>
-              <button style={S.icon} onClick={() => removeItem(item.id)}
-                onMouseEnter={e=>{e.currentTarget.style.color=C.danger;e.currentTarget.style.background=`${C.danger}10`;}}
-                onMouseLeave={e=>{e.currentTarget.style.color=C.subtle;e.currentTarget.style.background="transparent";}}>
-                &#215;
-              </button>
-            </div>
-          </div>
-        ))}
-      </div>
+      )}
 
       {/* ── FOOTER ── */}
       {orderItems.length > 0 && (
-        <div style={{ padding:"12px 24px", borderTop:`1px solid ${C.border}`, display:"flex", justifyContent:"flex-end", alignItems:"center", gap:20, fontSize:13, background:C.surface, position:"sticky", bottom:0, zIndex:10 }}>
+        <div style={{ padding:isMobile?"12px 16px":"12px 24px", borderTop:`1px solid ${C.border}`, display:"flex", justifyContent:"flex-end", alignItems:"center", gap:20, fontSize:13, background:C.surface, position:"sticky", bottom:0, zIndex:10 }}>
           <span style={{ color:C.muted }}>{orderItems.length} items to order in {sheet.name}</span>
           <span style={{ color:C.primary, fontWeight:700, fontFamily:"monospace", fontSize:14 }}>Total: ${orderTotal}</span>
         </div>
