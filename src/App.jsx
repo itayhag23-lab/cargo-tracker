@@ -284,6 +284,19 @@ const GoogleIcon = () => (
 );
 
 
+const ff = e => { e.target.style.borderColor = C.primary; };
+const fb = e => { e.target.style.borderColor = C.border; };
+
+const FieldInput = ({ label, type, value, onChange, autoFocus: af, onEnter }) => (
+  <div style={{ marginBottom:14, textAlign:"left" }}>
+    <div style={{ fontSize:11, color:C.muted, marginBottom:5, fontWeight:600, textTransform:"uppercase", letterSpacing:"0.05em" }}>{label}</div>
+    <input type={type} value={value} autoFocus={af} onChange={onChange}
+      onKeyDown={e => e.key==="Enter" && onEnter && onEnter()}
+      style={{ ...S.input, direction:"ltr", ...(type==="password"?{textAlign:"center",letterSpacing:"0.2em"}:{}) }}
+      onFocus={ff} onBlur={fb} />
+  </div>
+);
+
 function LoginScreen() {
   const savedEmail    = localStorage.getItem("cargo-email")    || "";
   const savedProvider = localStorage.getItem("cargo-provider") || "";
@@ -333,9 +346,6 @@ function LoginScreen() {
     setMode("new"); setEmail(""); setPasscode(""); setErr("");
   };
 
-  const ff = e => { e.target.style.borderColor = C.primary; };
-  const fb = e => { e.target.style.borderColor = C.border; };
-
   const Lnk = ({ children, onClick }) => (
     <span onClick={onClick} style={{ color:C.primary, cursor:"pointer", fontWeight:600 }}>{children}</span>
   );
@@ -352,16 +362,6 @@ function LoginScreen() {
       <div style={{ flex:1, height:1, background:C.border }} />
       <span style={{ fontSize:11, color:C.subtle }}>or</span>
       <div style={{ flex:1, height:1, background:C.border }} />
-    </div>
-  );
-
-  const FieldInput = ({ label, type, value, onChange, autoFocus: af, onEnter }) => (
-    <div style={{ marginBottom:14, textAlign:"left" }}>
-      <div style={{ fontSize:11, color:C.muted, marginBottom:5, fontWeight:600, textTransform:"uppercase", letterSpacing:"0.05em" }}>{label}</div>
-      <input type={type} value={value} autoFocus={af} onChange={onChange}
-        onKeyDown={e => e.key==="Enter" && onEnter && onEnter()}
-        style={{ ...S.input, direction:"ltr", ...(type==="password"?{textAlign:"center",letterSpacing:"0.2em"}:{}) }}
-        onFocus={ff} onBlur={fb} />
     </div>
   );
 
