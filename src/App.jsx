@@ -933,6 +933,10 @@ export default function App() {
               style={{ ...S.input, flex:1, padding:"8px 12px" }}
               onFocus={e=>{e.target.style.borderColor=C.primary;}} onBlur={e=>{e.target.style.borderColor=C.border;}}
             />
+            <button style={{ ...S.ghost, padding:"8px 12px", whiteSpace:"nowrap" }}
+              onClick={()=>fileRef.current.click()}>
+              &#11014; Import
+            </button>
             <button style={{ ...S.ghost, borderColor:`${C.primary}40`, color:C.primary, padding:"8px 12px", whiteSpace:"nowrap" }}
               onClick={()=>setShowAdd(true)}>
               + Add
