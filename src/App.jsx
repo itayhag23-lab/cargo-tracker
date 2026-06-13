@@ -142,6 +142,57 @@ function parseWorkbook(wb) {
   return result;
 }
 
+// ─── ORDER EXCEL BUILDER ──────────────────────────────────────────────────────
+// Builds a clean, itemised spreadsheet from the pending order, grouped by tab.
+// All pricing + product links live here, which keeps the email body short and
+// human (far less likely to be flagged as spam).
+function buildOrderWorkbook(groups) {
+  const today = new Date().toLocaleDateString("en-US", { year:"numeric", month:"long", day:"numeric" });
+  const aoa = [];
+  aoa.push(["Supply Order"]);
+  aoa.push(["Date", today]);
+  aoa.push([]);
+  aoa.push(["#", "Location", "Product", "Details", "Qty", "Unit ($)", "Total ($)", "Link"]);
+
+  let n = 1, grand = 0;
+  for (const g of groups) {
+    for (const i of g.items) {
+      const lineTotal = i.orderQty * i.costPerUnit;
+      grand += lineTotal;
+      aoa.push([
+        n++,
+        g.name,
+        i.name,
+        g.supplier === "AMAZON" ? (i.amazonName || "") : (i.modelNumber || ""),
+        i.orderQty,
+        i.costPerUnit ? Number(i.costPerUnit.toFixed(2)) : 0,
+        Number(lineTotal.toFixed(2)),
+        i.link && i.link.startsWith("http") ? i.link : "",
+      ]);
+    }
+  }
+  aoa.push([]);
+  aoa.push(["", "", "", "", "", "TOTAL", Number(grand.toFixed(2)), ""]);
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws["!cols"] = [
+    { wch:4 }, { wch:16 }, { wch:40 }, { wch:26 },
+    { wch:6 }, { wch:10 }, { wch:11 }, { wch:46 },
+  ];
+  ws["!merges"] = [{ s:{ r:0, c:0 }, e:{ r:0, c:7 } }];
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Order");
+  return wb;
+}
+
+// Serialises a workbook into a File object suitable for navigator.share / download.
+function workbookToFile(wb, filename) {
+  const out  = XLSX.write(wb, { bookType:"xlsx", type:"array" });
+  const blob = new Blob([out], { type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+  return new File([blob], filename, { type: blob.type });
+}
+
 // ─── COLORS ───────────────────────────────────────────────────────────────────
 const C = {
   bg:      "#F1F5F9",
@@ -590,29 +641,62 @@ function TemplateEditor({ template, onSave, onClose }) {
 }
 
 // ─── SEND EMAIL FLOW ──────────────────────────────────────────────────────────
-function SendFlow({ orderItems, sheetName, template, onClose }) {
+// `orderGroups` = [{ name, supplier, color, items:[...] }] across ALL tabs.
+function SendFlow({ orderGroups, template, onClose }) {
+  const flatItems = orderGroups.flatMap(g => g.items);
   const [step,    setStep]    = useState("input");
-  const [to,      setTo]      = useState("");
+  const [to,      setTo]      = useState(() => localStorage.getItem("cargo-order-to") || "");
   const [subject, setSubject] = useState("Supply Order – " + new Date().toLocaleDateString());
   const [preview, setPreview] = useState(null);
-  const total = orderItems.reduce((s,i) => s + i.orderQty * i.costPerUnit, 0).toFixed(2);
+  const [howSent, setHowSent] = useState("");
+  const total = flatItems.reduce((s,i) => s + i.orderQty * i.costPerUnit, 0).toFixed(2);
+  const filename = "Supply-Order-" + new Date().toISOString().slice(0,10) + ".xlsx";
 
+  // Clean, grouped, link-free body. Detail + links live in the attached Excel.
   const buildBody = () => {
     const date = new Date().toLocaleDateString("en-US", { weekday:"long", year:"numeric", month:"long", day:"numeric" });
-    const lines = orderItems.map(i => {
-      let line = i.name + " - Qty: " + i.orderQty + " | Cost: $" + (i.orderQty * i.costPerUnit).toFixed(2);
-      if (i.link && i.link.startsWith("http")) line += "\n\nLink: " + i.link;
-      return line;
+    const lines = orderGroups.map(g => {
+      const head = g.name + (g.supplier ? " (" + g.supplier + ")" : "");
+      const rows = g.items.map(i => "  • " + i.name + " — Qty " + i.orderQty).join("\n");
+      return head + "\n" + rows;
     }).join("\n\n");
-    return template
+    let body = template
       .replace("{{date}}", date)
       .replace("{{items}}", lines)
       .replace("{{totalCost}}", total);
+    if (!/attached|spreadsheet|excel/i.test(body)) {
+      body += "\n\nA detailed spreadsheet with pricing and product links is attached.";
+    }
+    return body;
   };
 
-  const doSend = () => {
+  const doSend = async () => {
+    localStorage.setItem("cargo-order-to", preview.to);
+    const file = workbookToFile(buildOrderWorkbook(orderGroups), filename);
+
+    // Preferred path (works on iPhone Mail): share sheet with the Excel attached.
+    if (navigator.canShare && navigator.canShare({ files:[file] })) {
+      try {
+        await navigator.share({ files:[file], title:preview.subject, text:preview.body });
+        setHowSent("share");
+        setStep("sent");
+        return;
+      } catch (e) {
+        if (e && e.name === "AbortError") return; // user dismissed the share sheet
+        // otherwise fall through to the download + mailto fallback
+      }
+    }
+
+    // Fallback (desktop / unsupported): download the Excel, then open a mail draft.
+    const url = URL.createObjectURL(file);
+    const a = document.createElement("a");
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+
     const uri = `mailto:${encodeURIComponent(preview.to)}?subject=${encodeURIComponent(preview.subject)}&body=${encodeURIComponent(preview.body)}`;
     window.open(uri, "_self");
+    setHowSent("download");
     setStep("sent");
   };
 
@@ -627,14 +711,25 @@ function SendFlow({ orderItems, sheetName, template, onClose }) {
 
         {step === "input" && <>
           <div style={{ fontSize:16, fontWeight:700, marginBottom:4, color:C.text }}>Send Order Email</div>
-          <div style={{ fontSize:12, color:C.muted, marginBottom:16 }}>{sheetName} &middot; {orderItems.length} items &middot; ${total}</div>
-          <div style={{ background:C.bg, borderRadius:8, padding:"10px 14px", marginBottom:18, maxHeight:140, overflowY:"auto" }}>
-            {orderItems.map(i => (
-              <div key={i.id} style={{ display:"flex", justifyContent:"space-between", fontSize:12, color:C.muted, padding:"4px 0", borderBottom:`1px solid ${C.border}` }}>
-                <span>{i.name}</span>
-                <span style={{ color:C.primary, fontFamily:"monospace", fontWeight:600 }}>x{i.orderQty} = ${(i.orderQty*i.costPerUnit).toFixed(2)}</span>
+          <div style={{ fontSize:12, color:C.muted, marginBottom:16 }}>{orderGroups.length} tab{orderGroups.length>1?"s":""} &middot; {flatItems.length} items &middot; ${total}</div>
+          <div style={{ background:C.bg, borderRadius:8, padding:"10px 14px", marginBottom:14, maxHeight:160, overflowY:"auto" }}>
+            {orderGroups.map(g => (
+              <div key={g.name} style={{ marginBottom:8 }}>
+                <div style={{ display:"flex", alignItems:"center", gap:6, fontSize:11, fontWeight:700, color:g.color, marginBottom:4 }}>
+                  <span style={{ width:7, height:7, borderRadius:"50%", background:g.color }} />
+                  {g.name}
+                </div>
+                {g.items.map(i => (
+                  <div key={i.id} style={{ display:"flex", justifyContent:"space-between", fontSize:12, color:C.muted, padding:"3px 0 3px 13px", borderBottom:`1px solid ${C.border}` }}>
+                    <span>{i.name}</span>
+                    <span style={{ color:C.primary, fontFamily:"monospace", fontWeight:600 }}>x{i.orderQty} = ${(i.orderQty*i.costPerUnit).toFixed(2)}</span>
+                  </div>
+                ))}
               </div>
             ))}
+          </div>
+          <div style={{ fontSize:11, color:C.muted, background:`${C.primary}0A`, border:`1px solid ${C.primary}20`, borderRadius:6, padding:"7px 10px", marginBottom:16 }}>
+            &#128206; A clean Excel (<b>{filename}</b>) with all pricing &amp; links is attached automatically.
           </div>
           {[
             { l:"Recipient", v:to,      s:setTo      },
@@ -648,7 +743,7 @@ function SendFlow({ orderItems, sheetName, template, onClose }) {
           ))}
           <div style={{ display:"flex", gap:8, marginTop:20 }}>
             <button style={S.cancel} onClick={onClose}>Cancel</button>
-            <button disabled={!to.trim()} onClick={() => { setPreview({ to, subject, body:buildBody() }); setStep("preview"); }}
+            <button disabled={!to.trim()} onClick={() => { setPreview({ to:to.trim(), subject, body:buildBody() }); setStep("preview"); }}
               style={{ ...S.primary, background:to.trim()?C.primary:C.border, color:to.trim()?"#fff":C.muted, cursor:to.trim()?"pointer":"not-allowed" }}>
               Preview &rarr;
             </button>
@@ -663,9 +758,15 @@ function SendFlow({ orderItems, sheetName, template, onClose }) {
               <div style={box}>{f.v}</div>
             </div>
           ))}
-          <div style={{ marginBottom:20 }}>
+          <div style={{ marginBottom:12 }}>
             <div style={lbl}>Body</div>
             <div style={{ ...box, whiteSpace:"pre-wrap", lineHeight:1.8, maxHeight:200, overflowY:"auto", fontSize:12, color:C.muted }}>{preview.body}</div>
+          </div>
+          <div style={{ marginBottom:20 }}>
+            <div style={lbl}>Attachment</div>
+            <div style={{ ...box, display:"flex", alignItems:"center", gap:8, fontSize:12, color:C.text }}>
+              &#128202; {filename} <span style={{ color:C.subtle }}>&middot; {flatItems.length} items</span>
+            </div>
           </div>
           <div style={{ display:"flex", gap:8 }}>
             <button style={S.cancel} onClick={() => setStep("input")}>&larr; Back</button>
@@ -676,8 +777,15 @@ function SendFlow({ orderItems, sheetName, template, onClose }) {
         {step === "sent" && (
           <div style={{ textAlign:"center", padding:"16px 0" }}>
             <div style={{ fontSize:40, marginBottom:12 }}>&#9993;</div>
-            <div style={{ fontSize:15, fontWeight:700, marginBottom:6, color:C.text }}>Email Client Opened</div>
-            <div style={{ fontSize:12, color:C.muted, marginBottom:24 }}>Draft ready to {preview && preview.to} — hit Send in your mail app.</div>
+            <div style={{ fontSize:15, fontWeight:700, marginBottom:6, color:C.text }}>
+              {howSent === "share" ? "Shared to Mail" : "Draft Opened"}
+            </div>
+            <div style={{ fontSize:12, color:C.muted, marginBottom:24, lineHeight:1.6 }}>
+              {howSent === "share"
+                ? <>Pick <b>Mail</b> in the share sheet — your order and the Excel are attached. Add {preview && preview.to} and hit Send.</>
+                : <>The Excel was downloaded and a draft to {preview && preview.to} opened. Attach <b>{filename}</b> from your downloads, then Send.</>
+              }
+            </div>
             <button style={{ ...S.btn, margin:"0 auto" }} onClick={onClose}>Close</button>
           </div>
         )}
@@ -881,6 +989,10 @@ export default function App() {
   const orderTotal  = orderItems.reduce((s,i) => s + i.orderQty*i.costPerUnit, 0).toFixed(2);
   const globalTotal = sheets.reduce((s,sh) => s + sh.items.filter(i=>i.orderQty>0&&!i.received).reduce((a,i)=>a+i.orderQty*i.costPerUnit,0), 0).toFixed(2);
   const globalOrder = sheets.reduce((n,sh) => n + sh.items.filter(i=>i.orderQty>0&&!i.received).length, 0);
+  // Pending items across ALL tabs, grouped — this is what an order email sends.
+  const orderGroups = sheets
+    .map(sh => ({ name:sh.name, supplier:sh.supplier, color:sh.color, items:sh.items.filter(i=>i.orderQty>0&&!i.received) }))
+    .filter(g => g.items.length > 0);
 
   const COLS = isAmazon
     ? "2fr 1.4fr 1fr 0.8fr 0.8fr 0.6fr 0.5fr 52px"
@@ -941,9 +1053,9 @@ export default function App() {
               onClick={()=>setShowAdd(true)}>
               + Add
             </button>
-            <button disabled={orderItems.length===0} onClick={()=>setShowEmail(true)}
-              style={{ ...S.btn, background:orderItems.length?C.primary:C.border, color:orderItems.length?"#fff":C.subtle, cursor:orderItems.length?"pointer":"not-allowed", padding:"8px 12px", whiteSpace:"nowrap" }}>
-              {orderItems.length > 0 ? `Order (${orderItems.length})` : "Order"}
+            <button disabled={globalOrder===0} onClick={()=>setShowEmail(true)}
+              style={{ ...S.btn, background:globalOrder?C.primary:C.border, color:globalOrder?"#fff":C.subtle, cursor:globalOrder?"pointer":"not-allowed", padding:"8px 12px", whiteSpace:"nowrap" }}>
+              {globalOrder > 0 ? `Order (${globalOrder})` : "Order"}
             </button>
           </div>
         </div>
@@ -983,9 +1095,9 @@ export default function App() {
               onMouseEnter={e=>{e.currentTarget.style.background=`${C.primary}08`;}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
               + Add Item
             </button>
-            <button disabled={orderItems.length===0} onClick={()=>setShowEmail(true)}
-              style={{ ...S.btn, background:orderItems.length?C.primary:C.border, color:orderItems.length?"#fff":C.subtle, cursor:orderItems.length?"pointer":"not-allowed" }}>
-              &#9993; Order{orderItems.length > 0 ? " (" + orderItems.length + ")" : ""}
+            <button disabled={globalOrder===0} onClick={()=>setShowEmail(true)}
+              style={{ ...S.btn, background:globalOrder?C.primary:C.border, color:globalOrder?"#fff":C.subtle, cursor:globalOrder?"pointer":"not-allowed" }}>
+              &#9993; Order{globalOrder > 0 ? " (" + globalOrder + ")" : ""}
             </button>
             <button onClick={() => signOut(auth)} title={user.email}
               style={{ ...S.ghost, fontSize:12, padding:"7px 12px" }}
@@ -1231,7 +1343,7 @@ export default function App() {
         <TemplateEditor template={template} onSave={tpl => { setTemplate(tpl); setDoc(settingsDoc(user.uid), { template:tpl }); }} onClose={() => setShowTpl(false)} />
       )}
       {showEmail && (
-        <SendFlow orderItems={orderItems} sheetName={sheet.name} template={template} onClose={() => setShowEmail(false)} />
+        <SendFlow orderGroups={orderGroups} template={template} onClose={() => setShowEmail(false)} />
       )}
       {showSheetModal && (
         <SheetModal
