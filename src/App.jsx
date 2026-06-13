@@ -8,6 +8,8 @@ import {
   createUserWithEmailAndPassword,
   sendPasswordResetEmail,
   signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
   GoogleAuthProvider,
   signOut,
 } from "firebase/auth";
@@ -323,6 +325,10 @@ const AUTH_ERRORS = {
   "auth/weak-password":        "Passcode must be at least 6 characters.",
   "auth/invalid-credential":   "Incorrect passcode.",
   "auth/popup-closed-by-user": "Sign-in cancelled.",
+  "auth/cancelled-popup-request":"Sign-in cancelled.",
+  "auth/popup-blocked":        "Pop-up blocked — redirecting to Google…",
+  "auth/unauthorized-domain":  "This website isn't authorised for Google sign-in yet. Add this domain in Firebase → Authentication → Settings → Authorized domains.",
+  "auth/operation-not-allowed":"Google sign-in isn't enabled for this project. Turn it on in Firebase → Authentication → Sign-in method.",
 };
 
 const GoogleIcon = () => (
@@ -363,15 +369,44 @@ function LoginScreen() {
   const [loading,   setLoading]   = useState(false);
   const [resetSent, setResetSent] = useState(false);
 
-  const onErr = e => { setErr(AUTH_ERRORS[e.code] || "Something went wrong. Try again."); setLoading(false); };
+  const onErr = e => {
+    // Surface the real Firebase code when we don't have a friendly message,
+    // so problems like unauthorized-domain are diagnosable instead of generic.
+    setErr(AUTH_ERRORS[e.code] || ("Sign-in failed (" + (e.code || e.message || "unknown") + ")."));
+    setLoading(false);
+  };
+
+  // A completed redirect sign-in lands back here — finish it on mount.
+  useEffect(() => {
+    getRedirectResult(auth).then(res => {
+      if (res && res.user) {
+        localStorage.setItem("cargo-provider", "google");
+        localStorage.removeItem("cargo-email");
+      }
+    }).catch(onErr);
+  }, []);
 
   const doGoogle = async () => {
     setErr(""); setLoading(true);
+    const provider = new GoogleAuthProvider();
+    // Popups are unreliable on mobile Safari/Chrome — use a full-page redirect
+    // there, and the snappier popup on desktop.
+    const isMobile = window.innerWidth < 768 || /iPhone|iPad|Android/i.test(navigator.userAgent);
     try {
-      await signInWithPopup(auth, new GoogleAuthProvider());
+      if (isMobile) {
+        await signInWithRedirect(auth, provider);
+        return; // page navigates away; result handled on return
+      }
+      await signInWithPopup(auth, provider);
       localStorage.setItem("cargo-provider", "google");
       localStorage.removeItem("cargo-email");
-    } catch(e) { onErr(e); }
+    } catch(e) {
+      // If the popup is blocked on desktop, fall back to redirect.
+      if (e && (e.code === "auth/popup-blocked" || e.code === "auth/cancelled-popup-request")) {
+        try { await signInWithRedirect(auth, provider); return; } catch(e2) { onErr(e2); return; }
+      }
+      onErr(e);
+    }
   };
 
   const doEmail = async (register) => {
