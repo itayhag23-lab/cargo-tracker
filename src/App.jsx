@@ -37,15 +37,21 @@ const useIsMobile = () => {
 const DEFAULT_TEMPLATE = [
   "Hello,",
   "",
-  "Please find the supply order for {{date}} below:",
+  "Here is our supply order for {{date}}.",
   "",
   "{{items}}",
   "",
-  "Estimated total: ${{totalCost}}",
+  "==============================",
+  "  ORDER SUMMARY",
+  "  Items ....... {{count}}",
+  "  Est. total .. ${{totalCost}}",
+  "==============================",
+  "",
+  "A detailed spreadsheet with pricing and links is attached.",
   "",
   "Please confirm receipt.",
   "",
-  "Thank you"
+  "Thank you!"
 ].join("\n");
 
 
@@ -657,7 +663,7 @@ function TemplateEditor({ template, onSave, onClose }) {
         <div style={{ fontSize:16, fontWeight:700, marginBottom:8, color:C.text }}>Edit Email Template</div>
         <div style={{ fontSize:12, color:C.muted, marginBottom:16, lineHeight:1.8 }}>
           Variables:&nbsp;
-          {["{{date}}", "{{items}}", "{{totalCost}}"].map(v => (
+          {["{{date}}", "{{items}}", "{{count}}", "{{totalCost}}"].map(v => (
             <code key={v} style={{ background:C.bg, padding:"1px 6px", borderRadius:3, color:C.primary, margin:"0 3px", fontSize:11 }}>{v}</code>
           ))}
         </div>
@@ -691,13 +697,15 @@ function SendFlow({ orderGroups, template, onClose }) {
   const buildBody = () => {
     const date = new Date().toLocaleDateString("en-US", { weekday:"long", year:"numeric", month:"long", day:"numeric" });
     const lines = orderGroups.map(g => {
-      const head = g.name + (g.supplier ? " (" + g.supplier + ")" : "");
-      const rows = g.items.map(i => "  • " + i.name + " — Qty " + i.orderQty).join("\n");
-      return head + "\n" + rows;
+      const subtotal = g.items.reduce((s,i) => s + i.orderQty*i.costPerUnit, 0).toFixed(2);
+      const head = "▸ " + g.name.toUpperCase() + (g.supplier ? "  ·  " + g.supplier : "");
+      const rows = g.items.map(i => "    • " + i.name + "  —  Qty " + i.orderQty).join("\n");
+      return head + "\n" + rows + "\n    Subtotal: $" + subtotal;
     }).join("\n\n");
     let body = template
       .replace("{{date}}", date)
       .replace("{{items}}", lines)
+      .replace("{{count}}", String(flatItems.length))
       .replace("{{totalCost}}", total);
     if (!/attached|spreadsheet|excel/i.test(body)) {
       body += "\n\nA detailed spreadsheet with pricing and product links is attached.";
