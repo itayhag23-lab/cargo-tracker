@@ -23,6 +23,21 @@ const uid      = () => Math.random().toString(36).slice(2, 9);
 const cleanNum = v  => parseFloat(String(v).replace(/[$,\s=]/g, "")) || 0;
 const cleanBool= v  => v === true || String(v).toLowerCase() === "yes" || String(v).toLowerCase() === "כן";
 
+// ─── INVENTORY (JFK vs EWR) ────────────────────────────────────────────────────
+// Each tab belongs to an inventory so the order email + Excel keep JFK and EWR
+// clearly apart. Tabs can set this explicitly; otherwise we infer it from the name.
+const INVENTORIES      = ["JFK", "EWR"];
+const INVENTORY_GROUPS = ["JFK", "EWR", ""];          // "" = ungrouped / Other
+const inventoryLabel   = inv => inv ? inv + " INVENTORY" : "OTHER";
+const detectInventory  = name => {
+  const n = String(name || "").toLowerCase();
+  if (/\bjfk\b|kennedy/.test(n))                         return "JFK";
+  if (/\bewr\b|newark|new[\s-]?york|\bny\b/.test(n))     return "EWR";
+  return "";
+};
+// The inventory a tab belongs to: explicit field first, then inferred from name.
+const sheetInventory = s => s.inventory || detectInventory(s.name);
+
 const useIsMobile = () => {
   const [mobile, setMobile] = useState(() => window.innerWidth < 768);
   useEffect(() => {
@@ -62,6 +77,7 @@ const DEFAULT_SHEETS = [
     name: "Uline JFK",
     supplier: "ULINE",
     color: "#2563EB",
+    inventory: "JFK",
     items: [
       { id:"d1", name:"Uline Industrial Tape CLEAR", unitsPerPack:36, orderQty:0, costPerUnit:1.99,  modelNumber:"S-423",   received:false, link:"https://www.uline.com/Product/Detail/S-423", amazonName:"", notes:"" },
       { id:"d2", name:"Colored Handwrap Green",      unitsPerPack:4,  orderQty:0, costPerUnit:26,    modelNumber:"S-2900G", received:false, link:"", amazonName:"", notes:"" },
@@ -72,6 +88,7 @@ const DEFAULT_SHEETS = [
     name: "Amazon",
     supplier: "AMAZON",
     color: "#F59E0B",
+    inventory: "",
     items: [
       { id:"d3", name:"HP 206A Toner Set",       unitsPerPack:1, orderQty:0, costPerUnit:329.86, modelNumber:"", received:false, link:"", amazonName:"HP 206A Black/Cyan/Magenta/Yellow", notes:"" },
       { id:"d4", name:"Logitech MK235 Keyboard", unitsPerPack:1, orderQty:0, costPerUnit:27.99,  modelNumber:"", received:false, link:"", amazonName:"Logitech MK235 Wireless Keyboard",  notes:"" },
@@ -140,10 +157,11 @@ function parseWorkbook(wb) {
     if (!items.length) continue;
 
     result.push({
-      id:       uid(),
-      name:     displayName,
-      supplier: isAmazon ? "AMAZON" : "ULINE",
-      color:    COLORS[result.length % COLORS.length],
+      id:        uid(),
+      name:      displayName,
+      supplier:  isAmazon ? "AMAZON" : "ULINE",
+      color:     COLORS[result.length % COLORS.length],
+      inventory: detectInventory(sheetName),
       items,
     });
   }
@@ -157,37 +175,54 @@ function parseWorkbook(wb) {
 function buildOrderWorkbook(groups) {
   const today = new Date().toLocaleDateString("en-US", { year:"numeric", month:"long", day:"numeric" });
   const aoa = [];
-  aoa.push(["Supply Order"]);
+  const merges = [];
+  const fullRow = r => merges.push({ s:{ r, c:0 }, e:{ r, c:7 } });
+
+  aoa.push(["Supply Order"]);             fullRow(0);
   aoa.push(["Date", today]);
   aoa.push([]);
-  aoa.push(["#", "Location", "Product", "Details", "Qty", "Unit ($)", "Total ($)", "Link"]);
 
   let n = 1, grand = 0;
-  for (const g of groups) {
-    for (const i of g.items) {
-      const lineTotal = i.orderQty * i.costPerUnit;
-      grand += lineTotal;
-      aoa.push([
-        n++,
-        g.name,
-        i.name,
-        g.supplier === "AMAZON" ? (i.amazonName || "") : (i.modelNumber || ""),
-        i.orderQty,
-        i.costPerUnit ? Number(i.costPerUnit.toFixed(2)) : 0,
-        Number(lineTotal.toFixed(2)),
-        i.link && i.link.startsWith("http") ? i.link : "",
-      ]);
+
+  // One block per inventory (JFK / EWR / Other) so the two are clearly apart.
+  for (const inv of INVENTORY_GROUPS) {
+    const invGroups = groups.filter(g => (g.inventory || "") === inv);
+    if (!invGroups.length) continue;
+
+    fullRow(aoa.length);
+    aoa.push([inventoryLabel(inv)]);
+    aoa.push(["#", "Location", "Product", "Details", "Qty", "Unit ($)", "Total ($)", "Link"]);
+
+    let invTotal = 0;
+    for (const g of invGroups) {
+      for (const i of g.items) {
+        const lineTotal = i.orderQty * i.costPerUnit;
+        invTotal += lineTotal; grand += lineTotal;
+        aoa.push([
+          n++,
+          g.name,
+          i.name,
+          g.supplier === "AMAZON" ? (i.amazonName || "") : (i.modelNumber || ""),
+          i.orderQty,
+          i.costPerUnit ? Number(i.costPerUnit.toFixed(2)) : 0,
+          Number(lineTotal.toFixed(2)),
+          i.link && i.link.startsWith("http") ? i.link : "",
+        ]);
+      }
     }
+    aoa.push(["", "", "", "", "", (inv || "Other") + " subtotal", Number(invTotal.toFixed(2)), ""]);
+    aoa.push([]);
   }
-  aoa.push([]);
-  aoa.push(["", "", "", "", "", "TOTAL", Number(grand.toFixed(2)), ""]);
+
+  // Grand total across every inventory — the single "everything together" line.
+  aoa.push(["", "", "", "", "", "GRAND TOTAL", Number(grand.toFixed(2)), ""]);
 
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   ws["!cols"] = [
     { wch:4 }, { wch:16 }, { wch:40 }, { wch:26 },
     { wch:6 }, { wch:10 }, { wch:11 }, { wch:46 },
   ];
-  ws["!merges"] = [{ s:{ r:0, c:0 }, e:{ r:0, c:7 } }];
+  ws["!merges"] = merges;
 
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Order");
@@ -608,9 +643,10 @@ function ItemModal({ item, isAmazon, onSave, onClose }) {
 // ─── SHEET MODAL ──────────────────────────────────────────────────────────────
 function SheetModal({ sheet, onSave, onClose }) {
   const PALETTE = ["#2563EB","#F59E0B","#10B981","#8B5CF6","#EF4444","#06B6D4","#EC4899","#F97316"];
-  const [name,     setName]     = useState(sheet ? sheet.name     : "");
-  const [supplier, setSupplier] = useState(sheet ? sheet.supplier : "ULINE");
-  const [color,    setColor]    = useState(sheet ? sheet.color    : PALETTE[0]);
+  const [name,      setName]      = useState(sheet ? sheet.name              : "");
+  const [supplier,  setSupplier]  = useState(sheet ? sheet.supplier          : "ULINE");
+  const [color,     setColor]     = useState(sheet ? sheet.color             : PALETTE[0]);
+  const [inventory, setInventory] = useState(sheet ? (sheet.inventory || "") : "");
   const ff = e => { e.target.style.borderColor = C.primary; };
   const fb = e => { e.target.style.borderColor = C.border; };
 
@@ -633,6 +669,15 @@ function SheetModal({ sheet, onSave, onClose }) {
           </select>
         </div>
 
+        <div style={{ marginBottom:14 }}>
+          <div style={{ fontSize:11, color:C.muted, marginBottom:5, fontWeight:600, textTransform:"uppercase", letterSpacing:"0.05em" }}>Inventory</div>
+          <select value={inventory} onChange={e => setInventory(e.target.value)} style={{ ...S.input, cursor:"pointer" }} onFocus={ff} onBlur={fb}>
+            <option value="">None / Other</option>
+            {INVENTORIES.map(inv => <option key={inv} value={inv}>{inv}</option>)}
+          </select>
+          <div style={{ fontSize:10, color:C.subtle, marginTop:4 }}>Keeps JFK and EWR separate in the order email &amp; Excel.</div>
+        </div>
+
         <div style={{ marginBottom:20 }}>
           <div style={{ fontSize:11, color:C.muted, marginBottom:8, fontWeight:600, textTransform:"uppercase", letterSpacing:"0.05em" }}>Color</div>
           <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
@@ -645,7 +690,7 @@ function SheetModal({ sheet, onSave, onClose }) {
 
         <div style={{ display:"flex", gap:8 }}>
           <button style={S.cancel} onClick={onClose}>Cancel</button>
-          <button style={S.primary} onClick={() => { if (name.trim()) { onSave({ name:name.trim(), supplier, color }); onClose(); } }}>
+          <button style={S.primary} onClick={() => { if (name.trim()) { onSave({ name:name.trim(), supplier, color, inventory }); onClose(); } }}>
             {sheet ? "Save" : "Create Tab"}
           </button>
         </div>
@@ -693,15 +738,31 @@ function SendFlow({ orderGroups, template, onClose }) {
   const total = flatItems.reduce((s,i) => s + i.orderQty * i.costPerUnit, 0).toFixed(2);
   const filename = "Supply-Order-" + new Date().toISOString().slice(0,10) + ".xlsx";
 
-  // Clean, grouped, link-free body. Detail + links live in the attached Excel.
+  // Clean, link-free body. Detail + links live in the attached Excel.
+  // Grouped first by inventory (JFK / EWR) so the two stay clearly separate,
+  // then by tab within each inventory.
   const buildBody = () => {
     const date = new Date().toLocaleDateString("en-US", { weekday:"long", year:"numeric", month:"long", day:"numeric" });
-    const lines = orderGroups.map(g => {
-      const subtotal = g.items.reduce((s,i) => s + i.orderQty*i.costPerUnit, 0).toFixed(2);
-      const head = "▸ " + g.name.toUpperCase() + (g.supplier ? "  ·  " + g.supplier : "");
-      const rows = g.items.map(i => "    • " + i.name + "  —  Qty " + i.orderQty).join("\n");
-      return head + "\n" + rows + "\n    Subtotal: $" + subtotal;
-    }).join("\n\n");
+    const sections = [];
+    for (const inv of INVENTORY_GROUPS) {
+      const invGroups = orderGroups.filter(g => (g.inventory || "") === inv);
+      if (!invGroups.length) continue;
+      const invTotal = invGroups
+        .reduce((s,g) => s + g.items.reduce((a,i) => a + i.orderQty*i.costPerUnit, 0), 0)
+        .toFixed(2);
+      const tabBlocks = invGroups.map(g => {
+        const subtotal = g.items.reduce((s,i) => s + i.orderQty*i.costPerUnit, 0).toFixed(2);
+        const head = "▸ " + g.name.toUpperCase() + (g.supplier ? "  ·  " + g.supplier : "");
+        const rows = g.items.map(i => "    • " + i.name + "  —  Qty " + i.orderQty).join("\n");
+        return head + "\n" + rows + "\n    Subtotal: $" + subtotal;
+      }).join("\n\n");
+      sections.push(
+        "══════════ " + inventoryLabel(inv) + " ══════════\n\n" +
+        tabBlocks +
+        "\n\n  " + (inv || "Other") + " total: $" + invTotal
+      );
+    }
+    const lines = sections.join("\n\n\n");
     let body = template
       .replace("{{date}}", date)
       .replace("{{items}}", lines)
@@ -755,21 +816,36 @@ function SendFlow({ orderGroups, template, onClose }) {
         {step === "input" && <>
           <div style={{ fontSize:16, fontWeight:700, marginBottom:4, color:C.text }}>Send Order Email</div>
           <div style={{ fontSize:12, color:C.muted, marginBottom:16 }}>{orderGroups.length} tab{orderGroups.length>1?"s":""} &middot; {flatItems.length} items &middot; ${total}</div>
-          <div style={{ background:C.bg, borderRadius:8, padding:"10px 14px", marginBottom:14, maxHeight:160, overflowY:"auto" }}>
-            {orderGroups.map(g => (
-              <div key={g.name} style={{ marginBottom:8 }}>
-                <div style={{ display:"flex", alignItems:"center", gap:6, fontSize:11, fontWeight:700, color:g.color, marginBottom:4 }}>
-                  <span style={{ width:7, height:7, borderRadius:"50%", background:g.color }} />
-                  {g.name}
-                </div>
-                {g.items.map(i => (
-                  <div key={i.id} style={{ display:"flex", justifyContent:"space-between", fontSize:12, color:C.muted, padding:"3px 0 3px 13px", borderBottom:`1px solid ${C.border}` }}>
-                    <span>{i.name}</span>
-                    <span style={{ color:C.primary, fontFamily:"monospace", fontWeight:600 }}>x{i.orderQty} = ${(i.orderQty*i.costPerUnit).toFixed(2)}</span>
+          <div style={{ background:C.bg, borderRadius:8, padding:"10px 14px", marginBottom:14, maxHeight:200, overflowY:"auto" }}>
+            {INVENTORY_GROUPS.map(inv => {
+              const invGroups = orderGroups.filter(g => (g.inventory || "") === inv);
+              if (!invGroups.length) return null;
+              const invTotal = invGroups
+                .reduce((s,g) => s + g.items.reduce((a,i) => a + i.orderQty*i.costPerUnit, 0), 0)
+                .toFixed(2);
+              return (
+                <div key={inv || "other"} style={{ marginBottom:12 }}>
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", fontSize:11, fontWeight:800, color:C.text, letterSpacing:"0.05em", borderBottom:`2px solid ${C.border}`, paddingBottom:4, marginBottom:6 }}>
+                    <span>{inventoryLabel(inv)}</span>
+                    <span style={{ color:C.warning, fontFamily:"monospace" }}>${invTotal}</span>
                   </div>
-                ))}
-              </div>
-            ))}
+                  {invGroups.map(g => (
+                    <div key={g.name} style={{ marginBottom:8 }}>
+                      <div style={{ display:"flex", alignItems:"center", gap:6, fontSize:11, fontWeight:700, color:g.color, marginBottom:4 }}>
+                        <span style={{ width:7, height:7, borderRadius:"50%", background:g.color }} />
+                        {g.name}
+                      </div>
+                      {g.items.map(i => (
+                        <div key={i.id} style={{ display:"flex", justifyContent:"space-between", fontSize:12, color:C.muted, padding:"3px 0 3px 13px", borderBottom:`1px solid ${C.border}` }}>
+                          <span>{i.name}</span>
+                          <span style={{ color:C.primary, fontFamily:"monospace", fontWeight:600 }}>x{i.orderQty} = ${(i.orderQty*i.costPerUnit).toFixed(2)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              );
+            })}
           </div>
           <div style={{ fontSize:11, color:C.muted, background:`${C.primary}0A`, border:`1px solid ${C.primary}20`, borderRadius:6, padding:"7px 10px", marginBottom:16 }}>
             &#128206; A clean Excel (<b>{filename}</b>) with all pricing &amp; links is attached automatically.
@@ -893,6 +969,70 @@ function MobileItemCard({ item, sheet, onEdit, onDelete, onPatch }) {
   );
 }
 
+// ─── IMPORT MODAL ─────────────────────────────────────────────────────────────
+// Always asks the user which tab each imported sheet should go into, instead of
+// silently merging by name — so JFK items never leak into EWR (or vice-versa).
+const NEW_DEST  = "__new__";
+const SKIP_DEST = "__skip__";
+
+function ImportModal({ parsed, sheets, onConfirm, onClose }) {
+  // Pre-select a sensible destination: an existing tab with the same name, else
+  // the first existing tab sharing the detected inventory, else "create new".
+  const guess = ps => {
+    const exact = sheets.find(s => s.name.toLowerCase() === ps.name.toLowerCase());
+    if (exact) return exact.id;
+    const inv = ps.inventory || detectInventory(ps.name);
+    if (inv) {
+      const sameInv = sheets.find(s => sheetInventory(s) === inv);
+      if (sameInv) return sameInv.id;
+    }
+    return NEW_DEST;
+  };
+  const [dest, setDest] = useState(() => parsed.map(guess));
+  const setOne = (i, v) => setDest(d => d.map((x, j) => j === i ? v : x));
+
+  return (
+    <div style={{ position:"fixed", inset:0, background:"rgba(15,23,42,0.4)", zIndex:50, display:"flex", alignItems:"center", justifyContent:"center", padding:"16px" }} onClick={onClose}>
+      <div style={{ background:C.surface, borderRadius:14, padding:28, width:"min(480px, calc(100vw - 32px))", maxHeight:"85vh", overflowY:"auto", boxShadow:"0 20px 60px rgba(0,0,0,0.15)", border:`1px solid ${C.border}` }} onClick={e => e.stopPropagation()}>
+        <div style={{ fontSize:16, fontWeight:700, marginBottom:4, color:C.text }}>Import Items</div>
+        <div style={{ fontSize:12, color:C.muted, marginBottom:18 }}>
+          Choose which tab each imported sheet should go into.
+        </div>
+
+        {parsed.map((ps, i) => {
+          const inv = ps.inventory || detectInventory(ps.name);
+          return (
+            <div key={i} style={{ marginBottom:16, paddingBottom:16, borderBottom:i < parsed.length-1 ? `1px solid ${C.border}` : "none" }}>
+              <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:6 }}>
+                <span style={{ fontSize:13, fontWeight:600, color:C.text }}>{ps.name}</span>
+                {inv && <Badge label={inv} color={inv === "JFK" ? C.primary : C.warning} />}
+                <span style={{ fontSize:11, color:C.subtle }}>{ps.items.length} item{ps.items.length>1?"s":""}</span>
+              </div>
+              <div style={{ fontSize:11, color:C.muted, marginBottom:5, fontWeight:600, textTransform:"uppercase", letterSpacing:"0.05em" }}>Import into</div>
+              <select value={dest[i]} onChange={e => setOne(i, e.target.value)} style={{ ...S.input, cursor:"pointer" }}>
+                {sheets.map(s => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}{sheetInventory(s) ? "  ·  " + sheetInventory(s) : ""}
+                  </option>
+                ))}
+                <option value={NEW_DEST}>{`➕ Create new tab "${ps.name}"`}</option>
+                <option value={SKIP_DEST}>✕ Skip this sheet</option>
+              </select>
+            </div>
+          );
+        })}
+
+        <div style={{ display:"flex", gap:8, marginTop:8 }}>
+          <button style={S.cancel} onClick={onClose}>Cancel</button>
+          <button style={S.primary} onClick={() => onConfirm(parsed.map((ps, i) => ({ parsed:ps, dest:dest[i] })))}>
+            Import
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────
 export default function App() {
   const isMobile = useIsMobile();
@@ -907,6 +1047,7 @@ export default function App() {
   const [showEmail,      setShowEmail]      = useState(false);
   const [showSheetModal, setShowSheetModal] = useState(false);
   const [editSheetIdx,   setEditSheetIdx]   = useState(null);
+  const [importSheets,   setImportSheets]   = useState(null); // parsed sheets awaiting a destination choice
   const [syncStatus,     setSyncStatus]     = useState("ok");
   const fileRef   = useRef();
   const saveTimer = useRef(null);
@@ -959,31 +1100,9 @@ export default function App() {
   const removeItem = id => patchSheetItems(activeSheet, sheets[activeSheet].items.filter(i=>i.id!==id));
   const patchItem  = (id, patch) => patchSheetItems(activeSheet, sheets[activeSheet].items.map(i=>i.id===id?{...i,...patch}:i));
 
-  // ── Excel import (smart merge) ────────────────────────────────────────────
-  const mergeSheets = (current, incoming) => {
-    const result = current.map(s => ({ ...s, items: [...s.items] }));
-    let added = 0;
-    for (const imp of incoming) {
-      const idx = result.findIndex(s => s.name.toLowerCase() === imp.name.toLowerCase());
-      if (idx >= 0) {
-        const isAllDefaults = result[idx].items.every(i => /^d\d+$/.test(i.id));
-        if (isAllDefaults) {
-          result[idx] = { ...result[idx], items: imp.items };
-          added += imp.items.length;
-        } else {
-          const existing = new Set(result[idx].items.map(i => i.name.toLowerCase()));
-          const newItems = imp.items.filter(i => !existing.has(i.name.toLowerCase()));
-          result[idx].items.push(...newItems);
-          added += newItems.length;
-        }
-      } else {
-        result.push(imp);
-        added += imp.items.length;
-      }
-    }
-    return { sheets: result, added };
-  };
-
+  // ── Excel import ───────────────────────────────────────────────────────────
+  // Parse the file, then let the user pick a destination tab for each sheet
+  // (handled by ImportModal) so JFK and EWR stay separate.
   const handleExcel = e => {
     const file = e.target.files[0]; if (!file) return;
     const reader = new FileReader();
@@ -991,20 +1110,43 @@ export default function App() {
       try {
         const wb = XLSX.read(new Uint8Array(ev.target.result), { type:"array" });
         const parsed = parseWorkbook(wb);
-        if (parsed.length > 0) {
-          const { sheets: merged, added } = mergeSheets(sheets, parsed);
-          setAndSave(merged);
-          setActiveSheet(0);
-          alert(added > 0
-            ? "Added " + added + " new item(s)."
-            : "No new items — everything is already up to date.");
-        } else {
-          alert("No data found. Make sure sheets have a מוצר column header.");
-        }
+        if (parsed.length > 0) setImportSheets(parsed);
+        else alert("No data found. Make sure sheets have a מוצר column header.");
       } catch (err) { alert("Error: " + err.message); }
       e.target.value = "";
     };
     reader.readAsArrayBuffer(file);
+  };
+
+  // Apply the user's destination choices from ImportModal.
+  const doImport = mapping => {
+    const result = sheets.map(s => ({ ...s, items: [...s.items] }));
+    let added = 0;
+    for (const { parsed: ps, dest } of mapping) {
+      if (dest === SKIP_DEST) continue;
+      if (dest === NEW_DEST) {
+        result.push({ ...ps, id: uid() });
+        added += ps.items.length;
+        continue;
+      }
+      const tgt = result.find(s => s.id === dest);
+      if (!tgt) continue;
+      const isAllDefaults = tgt.items.length > 0 && tgt.items.every(i => /^d\d+$/.test(i.id));
+      if (isAllDefaults) {
+        tgt.items = ps.items;
+        added += ps.items.length;
+      } else {
+        const existing = new Set(tgt.items.map(i => i.name.toLowerCase()));
+        const newItems = ps.items.filter(i => !existing.has(i.name.toLowerCase()));
+        tgt.items.push(...newItems);
+        added += newItems.length;
+      }
+    }
+    setAndSave(result);
+    setImportSheets(null);
+    alert(added > 0
+      ? "Added " + added + " new item(s)."
+      : "No new items — everything is already up to date.");
   };
 
   // ── Guards ─────────────────────────────────────────────────────────────────
@@ -1017,7 +1159,8 @@ export default function App() {
   if (!sheet)  return <Spinner />;
 
   const resetQty = () => {
-    if (!window.confirm("Reset all order quantities to 0 for this tab?")) return;
+    // Resets order quantities for the CURRENT tab only — never other tabs.
+    if (!window.confirm(`Reset order quantities to 0 for "${sheet.name}" only?`)) return;
     patchSheetItems(si, sheet.items.map(i => ({ ...i, orderQty: 0 })));
   };
 
@@ -1034,7 +1177,7 @@ export default function App() {
   const globalOrder = sheets.reduce((n,sh) => n + sh.items.filter(i=>i.orderQty>0&&!i.received).length, 0);
   // Pending items across ALL tabs, grouped — this is what an order email sends.
   const orderGroups = sheets
-    .map(sh => ({ name:sh.name, supplier:sh.supplier, color:sh.color, items:sh.items.filter(i=>i.orderQty>0&&!i.received) }))
+    .map(sh => ({ name:sh.name, supplier:sh.supplier, color:sh.color, inventory:sheetInventory(sh), items:sh.items.filter(i=>i.orderQty>0&&!i.received) }))
     .filter(g => g.items.length > 0);
 
   const COLS = isAmazon
@@ -1393,6 +1536,14 @@ export default function App() {
           sheet={editSheetIdx !== null ? sheets[editSheetIdx] : null}
           onSave={data => editSheetIdx !== null ? updateSheet(editSheetIdx, data) : addSheet(data)}
           onClose={() => { setShowSheetModal(false); setEditSheetIdx(null); }}
+        />
+      )}
+      {importSheets && (
+        <ImportModal
+          parsed={importSheets}
+          sheets={sheets}
+          onConfirm={doImport}
+          onClose={() => setImportSheets(null)}
         />
       )}
     </div>
