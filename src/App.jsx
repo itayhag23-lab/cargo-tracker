@@ -497,7 +497,7 @@ function LoginScreen() {
   return (
     <div style={{ minHeight:"100vh", background:C.bg, display:"flex", alignItems:"center", justifyContent:"center", padding:"16px" }}>
       <div style={{ background:C.surface, borderRadius:16, padding:"40px 44px", boxShadow:"0 4px 24px rgba(0,0,0,0.08)", border:`1px solid ${C.border}`, textAlign:"center", width:"min(360px, calc(100vw - 32px))" }}>
-        <div style={{ background:C.primary, width:48, height:48, borderRadius:12, display:"flex", alignItems:"center", justifyContent:"center", fontSize:22, margin:"0 auto 14px" }}>✈️</div>
+        <img src="/logo.jpg" alt="Israeli Aviation Security JFK" style={{ width:96, height:96, borderRadius:16, objectFit:"cover", margin:"0 auto 14px", display:"block" }} />
         <div style={{ fontSize:20, fontWeight:700, color:C.text, marginBottom:24 }}>Cargo Supply CRM</div>
 
         {/* ── RETURNING: GOOGLE ─────────────────────────── */}
@@ -1205,7 +1205,7 @@ export default function App() {
         <div style={{ background:C.surface, borderBottom:`1px solid ${C.border}`, position:"sticky", top:0, zIndex:20, boxShadow:"0 1px 3px rgba(0,0,0,0.05)" }}>
           <div style={{ padding:"10px 16px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
             <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-              <div style={{ background:C.primary, borderRadius:8, width:32, height:32, display:"flex", alignItems:"center", justifyContent:"center", fontSize:15 }}>&#9992;&#65039;</div>
+              <img src="/logo.jpg" alt="Israeli Aviation Security JFK" style={{ width:40, height:40, borderRadius:8, objectFit:"cover", flexShrink:0 }} />
               <div>
                 <div style={{ fontSize:13, fontWeight:700, color:C.text }}>Cargo Supply CRM</div>
                 <div style={{ fontSize:10, color:C.subtle }}>
@@ -1248,7 +1248,7 @@ export default function App() {
       ) : (
         <div style={{ background:C.surface, borderBottom:`1px solid ${C.border}`, padding:"0 24px", display:"flex", alignItems:"center", justifyContent:"space-between", height:56, position:"sticky", top:0, zIndex:20, boxShadow:"0 1px 3px rgba(0,0,0,0.05)" }}>
           <div style={{ display:"flex", alignItems:"center", gap:12 }}>
-            <div style={{ background:C.primary, borderRadius:8, width:34, height:34, display:"flex", alignItems:"center", justifyContent:"center", fontSize:16 }}>&#9992;&#65039;</div>
+            <img src="/logo.jpg" alt="Israeli Aviation Security JFK" style={{ width:44, height:44, borderRadius:8, objectFit:"cover", flexShrink:0 }} />
             <div>
               <div style={{ fontSize:14, fontWeight:700, color:C.text }}>Cargo Supply CRM</div>
               <div style={{ fontSize:11, color:C.subtle }}>
